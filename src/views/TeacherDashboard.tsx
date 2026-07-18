@@ -5,7 +5,7 @@ import { uploadTaskMedia, resolveMediaUrl } from '../lib/storage';
 import { Student, Task, Recording } from '../lib/types';
 import {
   Users, Plus, Music4, Mail, UserCircle, Calendar, Video, FileMusic,
-  X, Send, Loader2, Inbox, Clock, CheckCircle2, AlertCircle,
+  X, Send, Loader2, Inbox, Clock, CheckCircle2, AlertCircle, Pencil,
 } from 'lucide-react';
 
 type View = 'students' | 'requests' | 'history';
@@ -172,34 +172,43 @@ function AddStudentModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
 
 function StudentDetailModal({ student, onClose, onTaskCreated }: { student: Student; onClose: () => void; onTaskCreated: () => void }) {
   const [tab, setTab] = useState<'overview' | 'newtask'>('overview');
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  const openNewTask = () => { setEditingTask(null); setTab('newtask'); };
+  const openEditTask = (t: Task) => { setEditingTask(t); setTab('newtask'); };
+
   return (
     <Modal title={student.name} onClose={onClose} wide>
       <div className="flex gap-1 border-b border-ink-100 mb-4 -mt-1">
         <TabBtn active={tab === 'overview'} onClick={() => setTab('overview')}>Overview</TabBtn>
-        <TabBtn active={tab === 'newtask'} onClick={() => setTab('newtask')}>Set this week's task</TabBtn>
+        <TabBtn active={tab === 'newtask'} onClick={openNewTask}>
+          {editingTask && tab === 'newtask' ? 'Edit task' : "Set this week's task"}
+        </TabBtn>
       </div>
-      {tab === 'overview' ? <StudentOverview student={student} onSetTask={() => setTab('newtask')} /> : (
-        <SetTaskForm student={student} onDone={onTaskCreated} />
+      {tab === 'overview' ? (
+        <StudentOverview student={student} onSetTask={openNewTask} onEditTask={openEditTask} />
+      ) : (
+        <SetTaskForm student={student} existingTask={editingTask} onDone={onTaskCreated} />
       )}
     </Modal>
   );
 }
 
-function StudentOverview({ student, onSetTask }: { student: Student; onSetTask: () => void }) {
+function StudentOverview({ student, onSetTask, onEditTask }: { student: Student; onSetTask: () => void; onEditTask: (t: Task) => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('student_id', student.id)
-        .order('created_at', { ascending: false });
-      setTasks((data as Task[]) || []);
-      setLoading(false);
-    })();
+  const load = useCallback(async () => {
+    const { data } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('student_id', student.id)
+      .order('created_at', { ascending: false });
+    setTasks((data as Task[]) || []);
+    setLoading(false);
   }, [student.id]);
+
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div className="space-y-4">
@@ -224,10 +233,18 @@ function StudentOverview({ student, onSetTask }: { student: Student; onSetTask: 
             {tasks.slice(0, 5).map((t) => (
               <li key={t.id} className="card p-3 flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-sage-100 text-sage-700 flex items-center justify-center shrink-0"><Music4 className="w-4 h-4" /></div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="font-medium text-ink-800 text-sm truncate">{t.title}</div>
                   <div className="text-xs text-ink-400 flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(t.created_at).toLocaleDateString()}</div>
                 </div>
+                <button
+                  type="button"
+                  className="btn-ghost p-2 shrink-0"
+                  aria-label="Edit task"
+                  onClick={() => onEditTask(t)}
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
               </li>
             ))}
           </ul>
@@ -237,15 +254,20 @@ function StudentOverview({ student, onSetTask }: { student: Student; onSetTask: 
   );
 }
 
-function SetTaskForm({ student, onDone }: { student: Student; onDone: () => void }) {
+function SetTaskForm({ student, existingTask, onDone }: { student: Student; existingTask: Task | null; onDone: () => void }) {
   const { profile } = useAuth();
-  const [title, setTitle] = useState('');
-  const [notes, setNotes] = useState('');
+  const isEditing = !!existingTask;
+  const [title, setTitle] = useState(existingTask?.title || '');
+  const [notes, setNotes] = useState(existingTask?.notes || '');
   const [video, setVideo] = useState<File | null>(null);
   const [audio, setAudio] = useState<File | null>(null);
   const [tab, setTab] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const existingVideoName = existingTask?.video_url ? existingTask.video_url.split('/').pop() : null;
+  const existingAudioName = existingTask?.audio_url ? existingTask.audio_url.split('/').pop() : null;
+  const existingTabName = existingTask?.tab_url ? existingTask.tab_url.split('/').pop() : null;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,24 +276,40 @@ function SetTaskForm({ student, onDone }: { student: Student; onDone: () => void
     setBusy(true);
     setError(null);
 
-    // Insert the task row first to get an id for folder naming.
-    const { data: taskRow, error: insErr } = await supabase.from('tasks').insert({
-      teacher_id: profile.id,
-      student_id: student.id,
-      group_name: null,
-      title: title.trim(),
-      notes: notes.trim() || null,
-    }).select().single();
-    if (insErr || !taskRow) {
-      setError(insErr?.message || 'Could not create task.');
-      setBusy(false);
-      return;
-    }
-    const task = taskRow as Task;
+    let task: Task;
 
-    let videoUrl: string | null = null;
-    let audioUrl: string | null = null;
-    let tabUrl: string | null = null;
+    if (isEditing && existingTask) {
+      const { data: updatedRow, error: updErr } = await supabase
+        .from('tasks')
+        .update({ title: title.trim(), notes: notes.trim() || null })
+        .eq('id', existingTask.id)
+        .select()
+        .single();
+      if (updErr || !updatedRow) {
+        setError(updErr?.message || 'Could not update task.');
+        setBusy(false);
+        return;
+      }
+      task = updatedRow as Task;
+    } else {
+      const { data: taskRow, error: insErr } = await supabase.from('tasks').insert({
+        teacher_id: profile.id,
+        student_id: student.id,
+        group_name: null,
+        title: title.trim(),
+        notes: notes.trim() || null,
+      }).select().single();
+      if (insErr || !taskRow) {
+        setError(insErr?.message || 'Could not create task.');
+        setBusy(false);
+        return;
+      }
+      task = taskRow as Task;
+    }
+
+    let videoUrl: string | null = existingTask?.video_url || null;
+    let audioUrl: string | null = existingTask?.audio_url || null;
+    let tabUrl: string | null = existingTask?.tab_url || null;
     try {
       if (video) {
         const r = await uploadTaskMedia(profile.id, task.id, video, 'video');
@@ -289,7 +327,7 @@ function SetTaskForm({ student, onDone }: { student: Student; onDone: () => void
       console.error(err);
     }
 
-    if (videoUrl || audioUrl || tabUrl) {
+    if (!isEditing ? (videoUrl || audioUrl || tabUrl) : (video || audio || tab)) {
       const { error: updErr } = await supabase.from('tasks').update({
         video_url: videoUrl, audio_url: audioUrl, tab_url: tabUrl,
       }).eq('id', task.id);
@@ -311,14 +349,14 @@ function SetTaskForm({ student, onDone }: { student: Student; onDone: () => void
         <textarea id="tnotes" className="input min-h-[90px] resize-y" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What to focus on this week…" />
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
-        <FileInput label="Video of you playing (optional)" accept="video/*" icon={<Video className="w-4 h-4" />} file={video} onChange={setVideo} />
-        <FileInput label="Audio (optional)" accept="audio/*" icon={<FileMusic className="w-4 h-4" />} file={audio} onChange={setAudio} />
-        <FileInput label="Tab / notation (PDF or image)" accept="application/pdf,image/*" icon={<FileMusic className="w-4 h-4" />} file={tab} onChange={setTab} />
+        <FileInput label="Video of you playing (optional)" accept="video/*" icon={<Video className="w-4 h-4" />} file={video} onChange={setVideo} existingName={existingVideoName} />
+        <FileInput label="Audio (optional)" accept="audio/*" icon={<FileMusic className="w-4 h-4" />} file={audio} onChange={setAudio} existingName={existingAudioName} />
+        <FileInput label="Tab / notation (PDF or image)" accept="application/pdf,image/*" icon={<FileMusic className="w-4 h-4" />} file={tab} onChange={setTab} existingName={existingTabName} />
       </div>
       {error && <ErrorBox>{error}</ErrorBox>}
       <div className="flex gap-3 pt-1">
         <button type="submit" className="btn-primary flex-1" disabled={busy}>
-          {busy ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving…</> : <><Send className="w-5 h-5" /> Assign task</>}
+          {busy ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving…</> : <><Send className="w-5 h-5" /> {isEditing ? 'Save changes' : 'Assign task'}</>}
         </button>
       </div>
     </form>
@@ -440,20 +478,21 @@ function StudentHistory({ student, onBack }: { student: Student; onBack: () => v
   const [tasks, setTasks] = useState<Task[]>([]);
   const [recordings, setRecordings] = useState<Record<string, Recording[]>>({});
   const [loading, setLoading] = useState(true);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const [{ data: taskRows }, { data: recRows }] = await Promise.all([
-        supabase.from('tasks').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
-        supabase.from('recordings').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
-      ]);
-      setTasks((taskRows as Task[]) || []);
-      const map: Record<string, Recording[]> = {};
-      (recRows as Recording[] || []).forEach((r) => { (map[r.task_id] ||= []).push(r); });
-      setRecordings(map);
-      setLoading(false);
-    })();
+  const load = useCallback(async () => {
+    const [{ data: taskRows }, { data: recRows }] = await Promise.all([
+      supabase.from('tasks').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
+      supabase.from('recordings').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
+    ]);
+    setTasks((taskRows as Task[]) || []);
+    const map: Record<string, Recording[]> = {};
+    (recRows as Recording[] || []).forEach((r) => { (map[r.task_id] ||= []).push(r); });
+    setRecordings(map);
+    setLoading(false);
   }, [student.id]);
+
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div className="space-y-6">
@@ -485,6 +524,14 @@ function StudentHistory({ student, onBack }: { student: Student; onBack: () => v
                     {t.tab_url && <span className="flex items-center gap-1 text-sage-700"><FileMusic className="w-3 h-3" /> Tab</span>}
                   </div>
                 </div>
+                <button
+                  type="button"
+                  className="btn-ghost p-2 shrink-0"
+                  aria-label="Edit task"
+                  onClick={() => setEditingTask(t)}
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
               </div>
               <div className="mt-3 pt-3 border-t border-ink-100">
                 <div className="text-xs font-semibold text-ink-600 mb-2">Practice recordings ({(recordings[t.id] || []).length})</div>
@@ -499,6 +546,15 @@ function StudentHistory({ student, onBack }: { student: Student; onBack: () => v
             </li>
           ))}
         </ul>
+      )}
+      {editingTask && (
+        <Modal title={`Edit: ${editingTask.title}`} onClose={() => setEditingTask(null)}>
+          <SetTaskForm
+            student={student}
+            existingTask={editingTask}
+            onDone={() => { setEditingTask(null); load(); }}
+          />
+        </Modal>
       )}
     </div>
   );
@@ -551,13 +607,14 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
-function FileInput({ label, accept, icon, file, onChange }: { label: string; accept: string; icon: React.ReactNode; file: File | null; onChange: (f: File | null) => void }) {
+function FileInput({ label, accept, icon, file, onChange, existingName }: { label: string; accept: string; icon: React.ReactNode; file: File | null; onChange: (f: File | null) => void; existingName?: string | null }) {
+  const displayName = file ? file.name : existingName ? `${existingName} (current — tap to replace)` : null;
   return (
     <label className="block">
       <span className="label">{label}</span>
-      <div className={`rounded-xl border-2 border-dashed px-3 py-3 text-sm flex items-center gap-2 cursor-pointer transition ${file ? 'border-sage-400 bg-sage-50 text-sage-800' : 'border-ink-200 text-ink-500 hover:border-sage-300'}`}>
+      <div className={`rounded-xl border-2 border-dashed px-3 py-3 text-sm flex items-center gap-2 cursor-pointer transition ${file ? 'border-sage-400 bg-sage-50 text-sage-800' : existingName ? 'border-sage-300 bg-sage-50/50 text-ink-600' : 'border-ink-200 text-ink-500 hover:border-sage-300'}`}>
         {icon}
-        <span className="truncate flex-1">{file ? file.name : 'Tap to choose a file'}</span>
+        <span className="truncate flex-1">{displayName || 'Tap to choose a file'}</span>
         {file && <button type="button" className="text-ink-400 hover:text-rose-600" onClick={(e) => { e.preventDefault(); onChange(null); }}><X className="w-4 h-4" /></button>}
         <input type="file" accept={accept} className="hidden" onChange={(e) => onChange(e.target.files?.[0] || null)} />
       </div>
