@@ -63,9 +63,9 @@ function TaskView({ onNavigate }: { onNavigate: (v: string) => void }) {
   const [tabUrl, setTabUrl] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const loadTask = useCallback(async () => {
+  const loadTask = useCallback(async (silent = false) => {
     if (!profile || !student) { setTask(null); setTaskLoading(false); return; }
-    setTaskLoading(true);
+    if (!silent) setTaskLoading(true);
     const { data, error } = await supabase
       .from('tasks')
       .select('*')
@@ -87,7 +87,7 @@ function TaskView({ onNavigate }: { onNavigate: (v: string) => void }) {
     } else { setVideoUrl(null); setAudioUrl(null); setTabUrl(null); }
   }, [profile, student]);
 
-  useEffect(() => { loadTask(); }, [loadTask, refreshKey]);
+  useEffect(() => { loadTask(refreshKey > 0); }, [loadTask, refreshKey]);
 
   if (loading || taskLoading) return <div className="card p-8 text-center text-ink-400 flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>;
   if (!student) return <NotLinked />;
