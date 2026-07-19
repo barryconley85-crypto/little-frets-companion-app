@@ -1,5 +1,5 @@
 import { useAuth } from '../context/AuthContext';
-import { Music4, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 
 interface ShellProps {
   active: string;
@@ -15,9 +15,7 @@ export default function AppShell({ active, onNavigate, nav, children }: ShellPro
       <header className="sticky top-0 z-20 bg-sand-50/85 backdrop-blur border-b border-sand-100">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-sage-600 text-white flex items-center justify-center">
-              <Music4 className="w-5 h-5" />
-            </div>
+            <img src="https://i.postimg.cc/8CdzFx2V/little-frets-logo.jpg" alt="Little Frets" className="w-9 h-9 rounded-xl object-cover" />
             <div className="leading-tight">
               <div className="font-display font-semibold text-ink-800">Little Frets</div>
               <div className="text-[11px] text-ink-400 -mt-0.5">{profile?.role === 'teacher' ? 'Teacher' : 'Student'}</div>
