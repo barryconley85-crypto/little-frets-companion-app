@@ -350,7 +350,7 @@ function SetTaskForm({ student, existingTask, onDone }: { student: Student; exis
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
         <FileInput label="Video of you playing (optional)" accept="video/*" icon={<Video className="w-4 h-4" />} file={video} onChange={setVideo} existingName={existingVideoName} />
-        <FileInput label="Audio (optional)" accept="audio/*" icon={<FileMusic className="w-4 h-4" />} file={audio} onChange={setAudio} existingName={existingAudioName} />
+        <FileInput label="Audio (optional)" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" icon={<FileMusic className="w-4 h-4" />} file={audio} onChange={setAudio} existingName={existingAudioName} />
         <FileInput label="Tab / notation (PDF or image)" accept="application/pdf,image/*" icon={<FileMusic className="w-4 h-4" />} file={tab} onChange={setTab} existingName={existingTabName} />
       </div>
       {error && <ErrorBox>{error}</ErrorBox>}
