@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Warm, friendly palette — amber/rose accents on warm neutrals
+        // Little Frets brand palette — burnt orange + black on warm cream
         sand: {
           50: '#fbf7f2',
           100: '#f5ece1',
@@ -18,28 +18,31 @@ export default {
           900: '#5a3729',
         },
         sage: {
-          50: '#f4f7f4',
-          100: '#e6ede6',
-          200: '#cddccd',
-          300: '#a9c3a9',
-          400: '#82a582',
-          500: '#628862',
-          600: '#4c6e4c',
-          700: '#3d583d',
-          800: '#324732',
-          900: '#283a28',
+          // now the primary brand ORANGE accent (kept the key name so no
+          // component files need to change)
+          50: '#fdf3e7',
+          100: '#fae4c6',
+          200: '#f3c98c',
+          300: '#eaa752',
+          400: '#de8a2f',
+          500: '#c8792e',
+          600: '#a86323',
+          700: '#854e1c',
+          800: '#663d17',
+          900: '#4a2c11',
         },
         ink: {
-          50: '#f7f6f4',
-          100: '#eeeae4',
-          200: '#d9d2c8',
-          300: '#b8ad9f',
-          400: '#8e8174',
-          500: '#6b5f54',
-          600: '#544a41',
-          700: '#3f3830',
-          800: '#2a2520',
-          900: '#1a1612',
+          // now true black/charcoal to match the logo, instead of warm brown
+          50: '#f5f5f5',
+          100: '#e5e5e5',
+          200: '#cccccc',
+          300: '#a3a3a3',
+          400: '#737373',
+          500: '#525252',
+          600: '#3f3f3f',
+          700: '#262626',
+          800: '#171717',
+          900: '#0a0a0a',
         },
       },
       fontFamily: {
@@ -47,8 +50,8 @@ export default {
         display: ['"Fraunces"', 'ui-serif', 'Georgia', 'serif'],
       },
       boxShadow: {
-        soft: '0 2px 12px -2px rgba(90, 55, 41, 0.08), 0 1px 3px -1px rgba(90, 55, 41, 0.06)',
-        lift: '0 8px 30px -6px rgba(90, 55, 41, 0.12), 0 2px 8px -2px rgba(90, 55, 41, 0.08)',
+        soft: '0 2px 12px -2px rgba(10, 10, 10, 0.10), 0 1px 3px -1px rgba(10, 10, 10, 0.08)',
+        lift: '0 8px 30px -6px rgba(10, 10, 10, 0.15), 0 2px 8px -2px rgba(10, 10, 10, 0.10)',
       },
       borderRadius: {
         xl2: '1.25rem',
