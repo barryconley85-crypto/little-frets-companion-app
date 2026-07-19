@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { uploadTaskMedia, resolveMediaUrl } from '../lib/storage';
-import { Student, Task, Recording } from '../lib/types';
+import { uploadTaskMedia } from '../lib/storage';
+import { Student, Task } from '../lib/types';
 import {
   Users, Plus, Music4, Mail, UserCircle, Calendar, Video, FileMusic,
   X, Send, Loader2, Inbox, Clock, CheckCircle2, AlertCircle, Pencil,
@@ -476,19 +476,12 @@ function HistoryView() {
 
 function StudentHistory({ student, onBack }: { student: Student; onBack: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [recordings, setRecordings] = useState<Record<string, Recording[]>>({});
   const [loading, setLoading] = useState(true);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   const load = useCallback(async () => {
-    const [{ data: taskRows }, { data: recRows }] = await Promise.all([
-      supabase.from('tasks').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
-      supabase.from('recordings').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
-    ]);
+    const { data: taskRows } = await supabase.from('tasks').select('*').eq('student_id', student.id).order('created_at', { ascending: false });
     setTasks((taskRows as Task[]) || []);
-    const map: Record<string, Recording[]> = {};
-    (recRows as Recording[] || []).forEach((r) => { (map[r.task_id] ||= []).push(r); });
-    setRecordings(map);
     setLoading(false);
   }, [student.id]);
 
@@ -533,16 +526,6 @@ function StudentHistory({ student, onBack }: { student: Student; onBack: () => v
                   <Pencil className="w-4 h-4" />
                 </button>
               </div>
-              <div className="mt-3 pt-3 border-t border-ink-100">
-                <div className="text-xs font-semibold text-ink-600 mb-2">Practice recordings ({(recordings[t.id] || []).length})</div>
-                {(recordings[t.id] || []).length === 0 ? (
-                  <p className="text-xs text-ink-400">No recordings submitted for this task.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {(recordings[t.id] || []).map((r) => <TeacherRecordingRow key={r.id} rec={r} />)}
-                  </ul>
-                )}
-              </div>
             </li>
           ))}
         </ul>
@@ -557,23 +540,6 @@ function StudentHistory({ student, onBack }: { student: Student; onBack: () => v
         </Modal>
       )}
     </div>
-  );
-}
-
-function TeacherRecordingRow({ rec }: { rec: Recording }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    (async () => { const u = await resolveMediaUrl('practice-recordings', rec.audio_url); setUrl(u); setLoading(false); })();
-  }, [rec.audio_url]);
-  return (
-    <li className="rounded-xl bg-sand-50 border border-sand-100 p-3">
-      <div className="text-xs text-ink-500 mb-2">{new Date(rec.created_at).toLocaleString()}</div>
-      {loading ? <div className="text-xs text-ink-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Loading…</div>
-        : url ? <audio src={url} controls className="w-full" />
-        : <div className="text-xs text-rose-600">Could not load audio.</div>}
-      {rec.feedback_summary && <p className="text-xs text-ink-600 mt-2">{rec.feedback_summary}</p>}
-    </li>
   );
 }
 
