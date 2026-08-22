@@ -38,6 +38,17 @@ export interface Task {
   created_at: string;
 }
 
+export interface SongPreparationRequest {
+  id: string;
+  student_id: string;
+  teacher_id: string;
+  song_title: string;
+  artist: string;
+  status: 'new' | 'preparing' | 'ready';
+  created_at: string;
+  students?: Pick<Student, 'name'> | null;
+}
+
 export interface Recording {
   id: string;
   task_id: string;

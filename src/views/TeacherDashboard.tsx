@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { uploadTaskMedia } from '../lib/storage';
-import { GuitarMuscle, Student, Task } from '../lib/types';
+import { GuitarMuscle, SongPreparationRequest, Student, Task } from '../lib/types';
 import { GUITAR_MUSCLES, getMuscle, getTaskHealth, toggleMuscle } from '../lib/curriculum';
 import {
   AlertCircle, Calendar, CheckCircle2, FileMusic, Loader2, Mail,
@@ -17,6 +17,7 @@ function StudentsView() {
   const { profile } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [songRequests, setSongRequests] = useState<SongPreparationRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState<Student | null>(null);
@@ -24,13 +25,15 @@ function StudentsView() {
   const load = useCallback(async () => {
     if (!profile) return;
     setLoading(true);
-    const [{ data: studentRows, error: studentError }, { data: taskRows, error: taskError }] = await Promise.all([
+    const [{ data: studentRows, error: studentError }, { data: taskRows, error: taskError }, { data: requestRows, error: requestError }] = await Promise.all([
       supabase.from('students').select('*').eq('teacher_id', profile.id).order('created_at', { ascending: false }),
       supabase.from('tasks').select('*').eq('teacher_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('song_preparation_requests').select('*').eq('teacher_id', profile.id).order('created_at', { ascending: false }).limit(50),
     ]);
-    if (studentError || taskError) console.error(studentError || taskError);
+    if (studentError || taskError || requestError) console.error(studentError || taskError || requestError);
     setStudents((studentRows as Student[]) || []);
     setTasks((taskRows as Task[]) || []);
+    setSongRequests((requestRows as SongPreparationRequest[]) || []);
     setLoading(false);
   }, [profile]);
 
@@ -54,13 +57,14 @@ function StudentsView() {
           <h2 className="font-display text-3xl font-semibold tracking-tight">Missions, not messages</h2>
           <p className="mt-2 max-w-2xl text-sm text-white/70">You set the work and materials here. Learners practise and listen back privately in their own Passport.</p>
         </div>
-        <div className="relative z-10 mt-5 grid grid-cols-2 gap-3 max-w-md">
+        <div className="relative z-10 mt-5 grid grid-cols-3 gap-3 max-w-xl">
           <div className="teacher-stat"><span className="teacher-stat-value">{students.length}</span><span className="teacher-stat-label">learners in studio</span></div>
           <div className="teacher-stat"><span className="teacher-stat-value">{students.filter((student) => Boolean(student.user_id)).length}</span><span className="teacher-stat-label">connected learners</span></div>
+          <div className="teacher-stat"><span className="teacher-stat-value">{songRequests.filter((request) => request.status === 'new').length}</span><span className="teacher-stat-label">songs to prepare</span></div>
         </div>
       </section>
 
-      {!loading && <PracticeDesignDashboard students={students} tasks={tasks} />}
+      {!loading && <><SongPreparationBoard requests={songRequests} students={students} onStatusChange={async (request, status) => { const { data, error } = await supabase.from('song_preparation_requests').update({ status }).eq('id', request.id).select().single(); if (!error && data) setSongRequests((current) => current.map((item) => item.id === request.id ? data as SongPreparationRequest : item)); }} /><PracticeDesignDashboard students={students} tasks={tasks} /></>}
 
       {loading ? (
         <div className="card p-8 text-center text-ink-400 flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>
@@ -95,6 +99,13 @@ function StudentsView() {
       {selected && <StudentDetailModal student={selected} onClose={() => setSelected(null)} onTaskCreated={() => { setSelected(null); load(); }} />}
     </div>
   );
+}
+
+function SongPreparationBoard({ requests, students, onStatusChange }: { requests: SongPreparationRequest[]; students: Student[]; onStatusChange: (request: SongPreparationRequest, status: SongPreparationRequest['status']) => Promise<void> }) {
+  const [updating, setUpdating] = useState<string | null>(null);
+  const resolveName = (studentId: string) => students.find((student) => student.id === studentId)?.name || 'Learner';
+  const updateStatus = async (request: SongPreparationRequest, status: SongPreparationRequest['status']) => { setUpdating(request.id); await onStatusChange(request, status); setUpdating(null); };
+  return <section className="card p-5 sm:p-6"><div className="flex items-start justify-between gap-4 flex-wrap"><div><p className="growth-eyebrow text-sand-700">Before the next lesson</p><h2 className="font-display text-2xl font-semibold text-ink-800">Songs to prepare</h2><p className="mt-1 max-w-2xl text-sm text-ink-500">This is a bounded preparation list: song title and original artist only. There are no messages, replies, notes, recordings, or attachments.</p></div><span className="rounded-full bg-sand-100 text-sand-800 px-3 py-1 text-xs font-semibold">{requests.filter((request) => request.status === 'new').length} new</span></div>{requests.length === 0 ? <div className="mt-4 rounded-xl border border-dashed border-ink-200 bg-sand-50 px-4 py-5 text-sm text-ink-500">No songs to prepare yet. Learners can add a title and original artist from their private practice area.</div> : <ul className="mt-4 space-y-2">{requests.map((request) => <li key={request.id} className="rounded-xl border border-ink-100 bg-white p-3 sm:p-4"><div className="flex items-start justify-between gap-3 flex-wrap"><div className="min-w-0"><div className="font-semibold text-ink-800">{request.song_title}</div><div className="mt-0.5 text-sm text-ink-500">{request.artist} <span className="text-ink-300">·</span> from {resolveName(request.student_id)}</div><div className="mt-1 text-[11px] text-ink-400">Added {new Date(request.created_at).toLocaleDateString()}</div></div><div className="flex items-center gap-2"><span className={`text-xs font-semibold px-2 py-1 rounded-full ${request.status === 'ready' ? 'bg-sage-100 text-sage-700' : request.status === 'preparing' ? 'bg-amber-100 text-amber-700' : 'bg-ink-100 text-ink-600'}`}>{request.status === 'new' ? 'To prepare' : request.status === 'preparing' ? 'Preparing' : 'Ready'}</span><select aria-label={`Preparation status for ${request.song_title}`} className="input text-xs py-1.5 w-auto" value={request.status} disabled={updating === request.id} onChange={(event) => updateStatus(request, event.target.value as SongPreparationRequest['status'])}><option value="new">To prepare</option><option value="preparing">Preparing</option><option value="ready">Ready</option></select></div></div></li>)}</ul>}</section>;
 }
 
 type PlanRow = { student: Student; task: Task | null; health: ReturnType<typeof getTaskHealth> | null };

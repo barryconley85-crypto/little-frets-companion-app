@@ -116,8 +116,37 @@ function TaskView({ onNavigate }: { onNavigate: (view: string) => void }) {
         {tabUrl && <a href={tabUrl} download className="btn-secondary w-full sm:w-auto"><Download className="w-4 h-4" /> Download tab / notation</a>}
       </div>
       <PracticeRecorder student={student} task={task} onSaved={() => setRefreshKey((value) => value + 1)} onGoLibrary={() => onNavigate('library')} />
+      <SongPreparationCard student={student} />
     </div>
   );
+}
+
+function SongPreparationCard({ student }: { student: Student }) {
+  const [songTitle, setSongTitle] = useState('');
+  const [artist, setArtist] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isSafeSongField = (value: string) => value.length > 0 && value.length <= 80 && !/(https?:\/\/|www\.|@|\d{7,}|[\n\r])/i.test(value);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const title = songTitle.trim();
+    const originalArtist = artist.trim();
+    if (!isSafeSongField(title) || !isSafeSongField(originalArtist)) {
+      setError('Please enter only a song title and original artist. Links, contact details, and notes are not accepted here.');
+      return;
+    }
+    setSaving(true); setError(null);
+    const { error: insertError } = await supabase.from('song_preparation_requests').insert({
+      student_id: student.id, teacher_id: student.teacher_id, song_title: title, artist: originalArtist,
+    });
+    setSaving(false);
+    if (insertError) { setError('This song could not be added to the preparation list. Please try again.'); return; }
+    setSaved(true); setSongTitle(''); setArtist('');
+  };
+
+  return <section className="card p-5 sm:p-6"><div className="flex items-start gap-3"><div className="w-11 h-11 rounded-xl bg-sand-100 text-sand-700 flex items-center justify-center shrink-0"><Music4 className="w-6 h-6" /></div><div><h2 className="font-display text-xl font-semibold text-ink-800">Song for my next lesson</h2><p className="mt-1 text-sm text-ink-500">Thought of something you would love to learn? Add the title and original artist so your teacher can prepare it before the lesson.</p></div></div><div className="mt-4 rounded-xl border border-sage-100 bg-sage-50 px-3 py-2.5 text-xs text-sage-900">This is a song-preparation list, not a message box. You can add a song title and artist only—no notes, recordings, links, or replies.</div>{saved && <div className="mt-3 rounded-xl bg-sage-50 border border-sage-200 text-sage-800 text-sm px-4 py-3 flex items-start gap-2"><Sparkles className="w-4 h-4 mt-0.5 shrink-0" /><span>Added to your teacher’s lesson-preparation list.</span></div>}<form onSubmit={submit} className="mt-4 grid sm:grid-cols-2 gap-3"><div><label className="label" htmlFor="song-request-title">Song title</label><input id="song-request-title" className="input" value={songTitle} onChange={(event) => setSongTitle(event.target.value)} maxLength={80} placeholder="e.g. Riptide" required /></div><div><label className="label" htmlFor="song-request-artist">Original artist</label><input id="song-request-artist" className="input" value={artist} onChange={(event) => setArtist(event.target.value)} maxLength={80} placeholder="e.g. Vance Joy" required /></div><div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3"><span className="text-[11px] text-ink-400">No message, comment, link, contact detail, or attachment can be added.</span><button type="submit" className="btn-secondary" disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Music4 className="w-4 h-4" />} Add song</button></div></form>{error && <div className="mt-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3 flex items-start gap-2"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}</section>;
 }
 
 function PracticeRecorder({ student, task, onSaved, onGoLibrary }: { student: Student; task: Task; onSaved: () => void; onGoLibrary: () => void }) {
