@@ -32,7 +32,9 @@ export default function PracticeLab() {
   const [beat, setBeat] = useState(0);
   const [activeChordIndex, setActiveChordIndex] = useState(0);
   const [ladderStep, setLadderStep] = useState(0);
+  const [appliedTempo, setAppliedTempo] = useState<number | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
+  const coachRef = useRef<HTMLElement>(null);
   const beatRef = useRef(0);
   const totalBeatRef = useRef(0);
 
@@ -95,8 +97,11 @@ export default function PracticeLab() {
   useEffect(() => () => { audioRef.current?.close(); }, []);
 
   const applyLadderTempo = () => {
-    setTempo(LADDER_TEMPOS[ladderStep]);
+    const selectedTempo = LADDER_TEMPOS[ladderStep];
+    setTempo(selectedTempo);
+    setAppliedTempo(selectedTempo);
     stopAndReset();
+    window.setTimeout(() => coachRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   };
 
   const currentLadderTempo = LADDER_TEMPOS[ladderStep];
@@ -112,12 +117,15 @@ export default function PracticeLab() {
         </div>
       </section>
 
-      <section className="card p-5 sm:p-6">
+      <section ref={coachRef} className="card p-5 sm:p-6">
         <div className="flex items-start gap-3 mb-5"><div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0"><Volume2 className="w-5 h-5" /></div><div><h2 className="font-display text-xl font-semibold text-ink-800">Chord Progression Coach</h2><p className="mt-1 text-sm text-ink-500">Build a loop of two to six chords, then use a steady click track to give each change enough room.</p></div></div>
+        {appliedTempo !== null && <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 flex items-start gap-2"><Sparkles className="w-4 h-4 mt-0.5 shrink-0" /><span><strong>{appliedTempo} bpm is ready in the coach.</strong> Adjust it further with the slider below whenever you like.</span></div>}
 
         <div className="rounded-xl border border-sand-200 bg-sand-50 p-4"><div className="flex items-center justify-between gap-3 flex-wrap"><div><p className="text-sm font-semibold text-ink-800">Start with a musical loop</p><p className="mt-0.5 text-xs text-ink-500">Choose one, then change any chord to make it yours.</p></div><span className="text-xs font-semibold text-sage-700">Up to 6 chords</span></div><div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-5 gap-2">{PROGRESSION_STARTERS.map((starter) => <button key={starter.label} type="button" onClick={() => replaceProgression(starter.chords)} className="rounded-lg border border-sand-200 bg-white px-3 py-2.5 text-left transition hover:border-sage-300 hover:bg-sage-50"><span className="block text-xs font-semibold text-ink-800">{starter.label}</span><span className="mt-0.5 block text-[11px] text-ink-500">{starter.chords.join(' → ')}</span></button>)}</div></div>
 
         <div className="mt-5"><div className="flex items-center justify-between gap-3 mb-2"><span className="label mb-0">Your progression</span><span className="text-xs text-ink-400">Tap a chord to change it</span></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">{chords.map((chord, index) => <div key={`${index}-${chord}`} className="flex items-center gap-2 rounded-xl border border-ink-200 bg-white p-2"><span className="w-6 h-6 rounded-lg bg-sage-100 text-sage-800 flex items-center justify-center text-[11px] font-semibold shrink-0">{index + 1}</span><select aria-label={`Chord ${index + 1}`} value={chord} onChange={(event) => updateChord(index, event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-ink-800 outline-none">{CHORD_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select>{chords.length > 2 && <button type="button" onClick={() => removeChord(index)} className="rounded-lg p-1.5 text-ink-400 hover:bg-rose-50 hover:text-rose-600" aria-label={`Remove chord ${index + 1}`}><X className="w-4 h-4" /></button>}</div>)}{chords.length < 6 && <button type="button" onClick={addChord} className="rounded-xl border border-dashed border-sage-300 bg-sage-50/60 px-3 py-2.5 text-sm font-semibold text-sage-800 hover:bg-sage-100"><Plus className="w-4 h-4 inline mr-1" /> Add chord</button>}</div></div>
+
+        <div className="mt-5 rounded-xl border border-sage-200 bg-sage-50/70 p-4"><div className="flex items-center justify-between gap-3 flex-wrap"><div><p className="text-xs uppercase tracking-[0.14em] font-semibold text-sage-700">Your full loop</p><p className="mt-1 text-sm text-ink-600">The coach repeats every chord below in order — not just the first two.</p></div><span className="text-xs font-semibold text-sage-800">{chords.length} chords</span></div><div className="mt-3 flex flex-wrap gap-1.5">{chords.map((chord, index) => <span key={`summary-${chord}-${index}`} className="rounded-full border border-sage-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800">{index + 1}. {chord}</span>)}</div></div>
 
         <div className="mt-5 grid lg:grid-cols-[1fr,1.45fr] gap-5 items-stretch">
           <div className="rounded-xl border border-sand-200 bg-sand-50 p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold text-ink-700">Tempo</span><span className="font-display text-2xl font-semibold text-sage-800">{tempo} <span className="text-sm font-sans">bpm</span></span></div><input aria-label="Tempo in beats per minute" type="range" min="40" max="160" step="5" value={tempo} onChange={(event) => { setTempo(Number(event.target.value)); stopAndReset(); }} className="mt-4 w-full accent-sage-600" /><div className="mt-1 flex justify-between text-[11px] text-ink-400"><span>40</span><span>Slow and steady</span><span>160</span></div><div className="mt-5"><span className="label">Beats before each change</span><div className="flex gap-2">{[2, 4, 8].map((value) => <button key={value} type="button" onClick={() => { setBeatsPerChord(value); stopAndReset(); }} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${beatsPerChord === value ? 'border-sage-300 bg-sage-100 text-sage-800' : 'border-ink-200 bg-white text-ink-600 hover:border-sage-200'}`}>{value} beats</button>)}</div></div></div>
