@@ -8,15 +8,58 @@ type ChordShape = {
   strum: string;
 };
 
-const COMMON_CHORDS: ChordShape[] = [
-  { name: 'C', subtitle: 'C major', frets: [null, 3, 2, 0, 1, 0], strum: 'Strum from A' },
-  { name: 'A', subtitle: 'A major', frets: [null, 0, 2, 2, 2, 0], strum: 'Strum from A' },
-  { name: 'G', subtitle: 'G major', frets: [3, 2, 0, 0, 0, 3], strum: 'Strum all six' },
-  { name: 'E', subtitle: 'E major', frets: [0, 2, 2, 1, 0, 0], strum: 'Strum all six' },
-  { name: 'D', subtitle: 'D major', frets: [null, null, 0, 2, 3, 2], strum: 'Strum from D' },
-  { name: 'Am', subtitle: 'A minor', frets: [null, 0, 2, 2, 1, 0], strum: 'Strum from A' },
-  { name: 'Em', subtitle: 'E minor', frets: [0, 2, 2, 0, 0, 0], strum: 'Strum all six' },
-  { name: 'Dm', subtitle: 'D minor', frets: [null, null, 0, 2, 3, 1], strum: 'Strum from D' },
+type ChordFamily = {
+  title: string;
+  description: string;
+  accent: string;
+  shapes: ChordShape[];
+};
+
+const CHORD_FAMILIES: ChordFamily[] = [
+  {
+    title: 'Major', description: 'Bright, settled home-base shapes.', accent: 'text-amber-800', shapes: [
+      { name: 'C', subtitle: 'C major', frets: [null, 3, 2, 0, 1, 0], strum: 'Strum from A' },
+      { name: 'A', subtitle: 'A major', frets: [null, 0, 2, 2, 2, 0], strum: 'Strum from A' },
+      { name: 'G', subtitle: 'G major', frets: [3, 2, 0, 0, 0, 3], strum: 'Strum all six' },
+      { name: 'E', subtitle: 'E major', frets: [0, 2, 2, 1, 0, 0], strum: 'Strum all six' },
+      { name: 'D', subtitle: 'D major', frets: [null, null, 0, 2, 3, 2], strum: 'Strum from D' },
+      { name: 'F', subtitle: 'F major · mini barre', frets: [1, 3, 3, 2, 1, 1], strum: 'Strum all six' },
+    ],
+  },
+  {
+    title: 'Minor', description: 'A softer, more reflective colour.', accent: 'text-sky-800', shapes: [
+      { name: 'Am', subtitle: 'A minor', frets: [null, 0, 2, 2, 1, 0], strum: 'Strum from A' },
+      { name: 'Em', subtitle: 'E minor', frets: [0, 2, 2, 0, 0, 0], strum: 'Strum all six' },
+      { name: 'Dm', subtitle: 'D minor', frets: [null, null, 0, 2, 3, 1], strum: 'Strum from D' },
+    ],
+  },
+  {
+    title: 'Dominant 7', description: 'Written simply as 7: a useful sound that often wants to lead somewhere.', accent: 'text-rose-800', shapes: [
+      { name: 'E7', subtitle: 'E dominant 7', frets: [0, 2, 0, 1, 0, 0], strum: 'Strum all six' },
+      { name: 'A7', subtitle: 'A dominant 7', frets: [null, 0, 2, 0, 2, 0], strum: 'Strum from A' },
+      { name: 'D7', subtitle: 'D dominant 7', frets: [null, null, 0, 2, 1, 2], strum: 'Strum from D' },
+      { name: 'G7', subtitle: 'G dominant 7', frets: [3, 2, 0, 0, 0, 1], strum: 'Strum all six' },
+      { name: 'C7', subtitle: 'C dominant 7', frets: [null, 3, 2, 3, 1, 0], strum: 'Strum from A' },
+      { name: 'B7', subtitle: 'B dominant 7', frets: [null, 2, 1, 2, 0, 2], strum: 'Strum from A' },
+    ],
+  },
+  {
+    title: 'Minor 7', description: 'Written m7: a relaxed extension of a minor shape.', accent: 'text-sage-800', shapes: [
+      { name: 'Em7', subtitle: 'E minor 7', frets: [0, 2, 0, 0, 0, 0], strum: 'Strum all six' },
+      { name: 'Am7', subtitle: 'A minor 7', frets: [null, 0, 2, 0, 1, 0], strum: 'Strum from A' },
+      { name: 'Dm7', subtitle: 'D minor 7', frets: [null, null, 0, 2, 1, 1], strum: 'Strum from D' },
+      { name: 'Bm7', subtitle: 'B minor 7', frets: [null, 2, 0, 2, 0, 2], strum: 'Strum from A' },
+    ],
+  },
+  {
+    title: 'Major 7', description: 'Written maj7: a smooth, warm extension of a major shape.', accent: 'text-violet-800', shapes: [
+      { name: 'Cmaj7', subtitle: 'C major 7', frets: [null, 3, 2, 0, 0, 0], strum: 'Strum from A' },
+      { name: 'Gmaj7', subtitle: 'G major 7', frets: [3, 2, 0, 0, 0, 2], strum: 'Strum all six' },
+      { name: 'Fmaj7', subtitle: 'F major 7', frets: [null, null, 3, 2, 1, 0], strum: 'Strum from D' },
+      { name: 'Dmaj7', subtitle: 'D major 7', frets: [null, null, 0, 2, 2, 2], strum: 'Strum from D' },
+      { name: 'Amaj7', subtitle: 'A major 7', frets: [null, 0, 2, 1, 2, 0], strum: 'Strum from A' },
+    ],
+  },
 ];
 
 const CAGED_SHAPES: Array<ChordShape & { rootCue: string; note: string }> = [
@@ -75,8 +118,9 @@ export default function GuitarReference() {
       </section>
 
       <section className="card p-5 sm:p-6">
-        <div className="flex items-start gap-3 mb-5"><div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><Music4 className="w-5 h-5" /></div><div><h2 className="font-display text-xl font-semibold text-ink-800">Common open chords</h2><p className="mt-1 text-sm text-ink-500">Strings run left to right from low E to high E. <strong className="text-ink-600">×</strong> means do not strum; an open circle means let the string ring.</p></div></div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{COMMON_CHORDS.map((shape) => <article key={shape.name} className="rounded-xl border border-ink-100 bg-sand-50/60 p-3 text-center"><h3 className="font-display text-xl font-semibold text-ink-800">{shape.name}</h3><p className="text-[11px] text-ink-500">{shape.subtitle}</p><ChordDiagram shape={shape} compact /><p className="text-[11px] font-medium text-sage-700">{shape.strum}</p></article>)}</div>
+        <div className="flex items-start gap-3 mb-5"><div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><Music4 className="w-5 h-5" /></div><div><h2 className="font-display text-xl font-semibold text-ink-800">Open chord families</h2><p className="mt-1 text-sm text-ink-500">Strings run left to right from low E to high E. <strong className="text-ink-600">×</strong> means do not strum; an open circle means let the string ring.</p></div></div>
+        <div className="rounded-xl border border-sand-200 bg-sand-50 p-4 text-sm text-ink-700"><span className="font-semibold text-sage-800">A simple route:</span> start with major and minor shapes, then explore 7, m7, and maj7 as extra colours. A chord marked <strong>7</strong> is different from one marked <strong>maj7</strong>.</div>
+        <div className="mt-5 space-y-6">{CHORD_FAMILIES.map((family) => <section key={family.title}><div className="mb-3"><h3 className={`font-display text-lg font-semibold ${family.accent}`}>{family.title}</h3><p className="text-xs text-ink-500">{family.description}</p></div><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">{family.shapes.map((shape) => <article key={shape.name} className="rounded-xl border border-ink-100 bg-sand-50/60 p-3 text-center"><h4 className="font-display text-xl font-semibold text-ink-800">{shape.name}</h4><p className="text-[11px] text-ink-500">{shape.subtitle}</p><ChordDiagram shape={shape} compact /><p className="text-[11px] font-medium text-sage-700">{shape.strum}</p></article>)}</div></section>)}</div>
       </section>
 
       <section className="card p-5 sm:p-6">
