@@ -135,7 +135,7 @@ export default function PracticeLab() {
         </div>
       </section>
 
-      <FollowMeLiveRoom />
+      <FollowMeLiveRoom customChords={chords} />
 
       <section className="card p-5 sm:p-6">
         <div className="flex items-start gap-3 mb-5"><div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0"><Gauge className="w-5 h-5" /></div><div><h2 className="font-display text-xl font-semibold text-ink-800">Tempo Ladder</h2><p className="mt-1 text-sm text-ink-500">A gentle set of optional resting places. You decide when a tempo feels ready; the app does not test or track you.</p></div></div>
