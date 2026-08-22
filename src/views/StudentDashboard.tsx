@@ -5,6 +5,7 @@ import { uploadPracticeRecording, resolveMediaUrl } from '../lib/storage';
 import { analyzeRecording, FeedbackResult } from '../lib/pitch';
 import GuitarTuner from '../components/GuitarTuner';
 import GuitarReference from '../components/GuitarReference';
+import PracticeLab from '../components/PracticeLab';
 import { GuitarMuscle, Student, Task, Recording } from '../lib/types';
 import { getMuscle } from '../lib/curriculum';
 import {
@@ -12,13 +13,14 @@ import {
   Mic, Music4, Play, Sparkles, Square, TrendingUp, UserCircle, Video,
 } from 'lucide-react';
 
-type View = 'task' | 'library' | 'tuner' | 'songs' | 'reference';
+type View = 'task' | 'library' | 'tuner' | 'songs' | 'reference' | 'lab';
 
 export default function StudentDashboard({ view, onNavigate }: { view: string; onNavigate: (view: string) => void }) {
-  const active = (['task', 'library', 'tuner', 'songs', 'reference'].includes(view) ? view : 'task') as View;
+  const active = (['task', 'library', 'tuner', 'songs', 'reference', 'lab'].includes(view) ? view : 'task') as View;
   if (active === 'library') return <LibraryView />;
   if (active === 'tuner') return <GuitarTuner />;
   if (active === 'reference') return <GuitarReference />;
+  if (active === 'lab') return <PracticeLab />;
   if (active === 'songs') return <SongPreparationView />;
   return <TaskView onNavigate={onNavigate} />;
 }
