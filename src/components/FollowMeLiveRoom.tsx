@@ -23,6 +23,19 @@ const BAND_SETS: BandSet[] = [
   { id: 'rock', title: 'Rock Stage', bpm: 120, chords: ['G', 'D', 'Em', 'C'], description: 'Driving live drums, electric bass, and an energetic rehearsal-room feel.', track: '/audio/live-room/tracks/rock-four-chord.mp3', accent: 'border-rose-200/50 bg-rose-200/15 text-rose-50' },
 ];
 
+const bandBufferCache = new Map<string, AudioBuffer>();
+
+async function loadBandBuffer(context: AudioContext, track: string) {
+  const cached = bandBufferCache.get(track);
+  if (cached) return cached;
+  const response = await fetch(track);
+  if (!response.ok) throw new Error('The backing track could not be loaded.');
+  const source = await response.arrayBuffer();
+  const decoded = await context.decodeAudioData(source.slice(0));
+  bandBufferCache.set(track, decoded);
+  return decoded;
+}
+
 type FollowMeLiveRoomProps = { customChords: string[] };
 
 export default function FollowMeLiveRoom({ customChords }: FollowMeLiveRoomProps) {
@@ -34,8 +47,11 @@ export default function FollowMeLiveRoom({ customChords }: FollowMeLiveRoomProps
   const [chordIndex, setChordIndex] = useState(0);
   const [volume, setVolume] = useState(90);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [isLoadingBand, setIsLoadingBand] = useState(false);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
   const timerRef = useRef<number | null>(null);
   const beatRef = useRef(0);
   const chordRef = useRef(0);
@@ -56,8 +72,11 @@ export default function FollowMeLiveRoom({ customChords }: FollowMeLiveRoomProps
 
   const stopRoom = () => {
     clearTimer();
-    audioRef.current?.pause();
-    if (audioRef.current) audioRef.current.currentTime = 0;
+    try { sourceRef.current?.stop(); } catch { /* Source may already have ended. */ }
+    sourceRef.current = null;
+    gainRef.current?.disconnect();
+    gainRef.current = null;
+    setIsLoadingBand(false);
     setState('idle');
     setCountInBeat(0);
     setBeat(0);
@@ -66,48 +85,69 @@ export default function FollowMeLiveRoom({ customChords }: FollowMeLiveRoomProps
     chordRef.current = 0;
   };
 
-  const beginBand = () => {
+  const beginBand = async () => {
     setAudioError(null);
-    setState('count-in');
-    setCountInBeat(1);
-    let count = 1;
-    timerRef.current = window.setInterval(() => {
-      count += 1;
-      if (count <= 4) {
-        setCountInBeat(count);
-        return;
-      }
-      clearTimer();
-      const audio = new Audio(activeSet.track);
-      audio.loop = true;
-      audio.volume = volume / 100;
-      audioRef.current = audio;
-      audio.play().catch(() => setAudioError('The backing track could not start. Check your device sound is enabled, then try again.'));
-      setState('playing');
-      setBeat(0);
-      setChordIndex(0);
-      beatRef.current = 0;
-      chordRef.current = 0;
+    setIsLoadingBand(true);
+    try {
+      if (!audioContextRef.current) audioContextRef.current = new window.AudioContext();
+      const context = audioContextRef.current;
+      if (context.state === 'suspended') await context.resume();
+      const buffer = await loadBandBuffer(context, activeSet.track);
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(volume / 100, context.currentTime);
+      gain.connect(context.destination);
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      source.connect(gain);
+      const startAt = context.currentTime + (beatMs * 4) / 1000;
+      source.start(startAt);
+      sourceRef.current = source;
+      gainRef.current = gain;
+      setIsLoadingBand(false);
+      setState('count-in');
+      setCountInBeat(1);
+      let count = 1;
       timerRef.current = window.setInterval(() => {
-        const nextBeat = (beatRef.current + 1) % 4;
-        beatRef.current = nextBeat;
-        setBeat(nextBeat);
-        if (nextBeat === 0) {
-          const nextChordIndex = (chordRef.current + 1) % activeSet.chords.length;
-          chordRef.current = nextChordIndex;
-          setChordIndex(nextChordIndex);
+        count += 1;
+        if (count <= 4) {
+          setCountInBeat(count);
+          return;
         }
+        clearTimer();
+        setState('playing');
+        setBeat(0);
+        setChordIndex(0);
+        beatRef.current = 0;
+        chordRef.current = 0;
+        timerRef.current = window.setInterval(() => {
+          const nextBeat = (beatRef.current + 1) % 4;
+          beatRef.current = nextBeat;
+          setBeat(nextBeat);
+          if (nextBeat === 0) {
+            const nextChordIndex = (chordRef.current + 1) % activeSet.chords.length;
+            chordRef.current = nextChordIndex;
+            setChordIndex(nextChordIndex);
+          }
+        }, beatMs);
       }, beatMs);
-    }, beatMs);
+    } catch (error) {
+      setIsLoadingBand(false);
+      setState('idle');
+      setAudioError(error instanceof Error ? error.message : 'The backing track could not start. Check your device sound is enabled, then try again.');
+    }
   };
 
   useEffect(() => () => {
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
-    audioRef.current?.pause();
+    try { sourceRef.current?.stop(); } catch { /* Source may already have ended. */ }
+    gainRef.current?.disconnect();
+    audioContextRef.current?.close();
   }, []);
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume / 100;
+    const context = audioContextRef.current;
+    if (context && gainRef.current) gainRef.current.gain.setTargetAtTime(volume / 100, context.currentTime, 0.02);
   }, [volume]);
 
   useEffect(() => {
@@ -161,7 +201,7 @@ export default function FollowMeLiveRoom({ customChords }: FollowMeLiveRoomProps
 
         {audioError && <div className="mt-4 rounded-xl border border-rose-300/30 bg-rose-300/10 px-4 py-3 text-sm text-rose-100">{audioError}</div>}
 
-        <div className="mt-5 grid sm:grid-cols-2 gap-3"><button type="button" onClick={state === 'idle' ? beginBand : stopRoom} className="rounded-xl bg-sage-200 text-ink-900 px-4 py-3 font-semibold flex items-center justify-center gap-2 hover:bg-sage-100 transition">{state === 'idle' ? <><Play className="w-5 h-5" /> Start a 4-beat count-in</> : <><Pause className="w-5 h-5" /> Stop the band</>}</button><button type="button" onClick={stopRoom} disabled={state === 'idle'} className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 font-semibold flex items-center justify-center gap-2 hover:bg-white/15 transition disabled:cursor-not-allowed disabled:opacity-40"><RotateCcw className="w-5 h-5" /> Restart this set</button></div>
+        <div className="mt-5 grid sm:grid-cols-2 gap-3"><button type="button" disabled={isLoadingBand} onClick={state === 'idle' ? beginBand : stopRoom} className="rounded-xl bg-sage-200 text-ink-900 px-4 py-3 font-semibold flex items-center justify-center gap-2 hover:bg-sage-100 transition disabled:cursor-wait disabled:opacity-70">{isLoadingBand ? <><Music2 className="w-5 h-5 animate-pulse" /> Loading the band…</> : state === 'idle' ? <><Play className="w-5 h-5" /> Start a 4-beat count-in</> : <><Pause className="w-5 h-5" /> Stop the band</>}</button><button type="button" onClick={stopRoom} disabled={state === 'idle' && !isLoadingBand} className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 font-semibold flex items-center justify-center gap-2 hover:bg-white/15 transition disabled:cursor-not-allowed disabled:opacity-40"><RotateCcw className="w-5 h-5" /> Restart this set</button></div>
 
         <div className="mt-4 rounded-xl border border-sky-200/15 bg-sky-200/10 px-4 py-3 text-xs leading-relaxed text-sky-100">This is a private browser play-along. It does not ask for microphone permission, record practice, upload audio, store activity, or send anything to your teacher.</div>
       </div>
