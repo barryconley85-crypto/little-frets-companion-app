@@ -13,11 +13,13 @@ export default function AuthScreen() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('teacher');
   const [error, setError] = useState<string | null>(null);
+  const [confirmationSent, setConfirmationSent] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setConfirmationSent(null);
     setBusy(true);
     if (mode === 'signin') {
       const { error } = await signIn(email.trim(), password);
@@ -29,7 +31,8 @@ export default function AuthScreen() {
         return;
       }
       const { error } = await signUp({ email: email.trim(), password, name: name.trim(), role });
-      if (error) setError(error);
+      if (error) setError(formatAuthError(error));
+      else setConfirmationSent(email.trim());
     }
     setBusy(false);
   };
@@ -147,6 +150,12 @@ export default function AuthScreen() {
               </div>
             )}
 
+            {confirmationSent && (
+              <div className="rounded-xl bg-sage-50 border border-sage-200 text-sage-800 text-sm px-4 py-3 leading-relaxed">
+                <strong>Check your inbox.</strong> We’ve sent a confirmation link to {confirmationSent}. Open it, then return here to sign in. If you can’t see it, check Spam/Junk before trying again.
+              </div>
+            )}
+
             {error && (
               <div className="rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3">
                 {error}
@@ -163,7 +172,7 @@ export default function AuthScreen() {
             <button
               type="button"
               className="font-semibold text-sage-700 hover:text-sage-800 underline-offset-2 hover:underline"
-              onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null); }}
+              onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null); setConfirmationSent(null); }}
             >
               {mode === 'signin' ? 'Sign up' : 'Sign in'}
             </button>
@@ -172,6 +181,13 @@ export default function AuthScreen() {
       </div>
     </div>
   );
+}
+
+function formatAuthError(error: string) {
+  const normalized = error.toLowerCase();
+  if (normalized.includes('rate limit')) return 'We’ve sent too many emails recently. Please wait a few minutes, then try again.';
+  if (normalized.includes('email not confirmed')) return 'Please confirm your email first. Check your inbox and Spam/Junk folder for the Little Frets link.';
+  return error;
 }
 
 function Feature({ icon, text }: { icon: React.ReactNode; text: string }) {

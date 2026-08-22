@@ -36,7 +36,8 @@ export function midiToNoteName(midi: number): string {
  */
 export async function analyzeRecording(blob: Blob): Promise<FeedbackResult> {
   const arrayBuffer = await blob.arrayBuffer();
-  const AudioCtx = (window.AudioContext || (window as any).webkitAudioContext);
+  const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) throw new Error('Audio analysis is not supported in this browser.');
   const ctx = new AudioCtx();
   let decoded: AudioBuffer;
   try {

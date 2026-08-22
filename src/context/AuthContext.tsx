@@ -76,17 +76,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadProfile]);
 
   const signUp = useCallback(async ({ email, password, name, role }: { email: string; password: string; name: string; role: Role }) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name,
+          requested_role: role,
+        },
+      },
+    });
     if (error) return { error: error.message };
-    const user = data.user;
-    if (!user) return { error: 'Sign up failed. Please try again.' };
-
-    // Update the auto-created profile with the chosen name and role.
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ name, role })
-      .eq('id', user.id);
-    if (updateError) return { error: updateError.message };
+    if (!data.user) return { error: 'Sign up failed. Please try again.' };
     return { error: null };
   }, []);
 
@@ -113,6 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// This hook shares the context intentionally; it is not a renderable component export.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

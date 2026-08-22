@@ -21,3 +21,15 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Local live-test and connector artefacts
+/.live-test-private/
+/.check_*.json
+/.confirm_*.json
+/.link_*.json
+/.restore_*.json
+/.set_*.json
+/.supabase_tools.txt
+/live_test_log.md
+/review_evidence.md
+/differentiation_research.md

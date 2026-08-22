@@ -114,6 +114,13 @@ function TaskView({ onNavigate }: { onNavigate: (v: string) => void }) {
           </div>
         </div>
         {task.notes && <p className="text-ink-700 whitespace-pre-wrap leading-relaxed mb-4">{task.notes}</p>}
+        {(task.mission || task.success_criteria || task.due_at || task.estimated_minutes) && (
+          <div className="rounded-xl bg-sand-50 border border-sand-200 p-4 mb-4 space-y-2">
+            {task.mission && <p className="text-sm text-ink-700"><span className="font-semibold text-sage-800">Today’s mission:</span> {task.mission}</p>}
+            {task.success_criteria && <p className="text-sm text-ink-700"><span className="font-semibold text-sage-800">You’re done when:</span> {task.success_criteria}</p>}
+            {(task.due_at || task.estimated_minutes) && <div className="text-xs text-ink-500 flex gap-3 flex-wrap"><span>{task.due_at ? `Next check-in: ${new Date(task.due_at).toLocaleDateString()}` : ''}</span><span>{task.estimated_minutes ? `${task.estimated_minutes} min focus` : ''}</span></div>}
+          </div>
+        )}
         {videoUrl && (<div className="mb-4"><div className="text-sm font-semibold text-ink-700 mb-1.5 flex items-center gap-1.5"><Video className="w-4 h-4" /> Watch</div><video src={videoUrl} controls className="w-full rounded-xl bg-ink-900" /></div>)}
         {audioUrl && (<div className="mb-4"><div className="text-sm font-semibold text-ink-700 mb-1.5 flex items-center gap-1.5"><FileMusic className="w-4 h-4" /> Listen</div><audio src={audioUrl} controls className="w-full" /></div>)}
         {tabUrl && (<a href={tabUrl} download className="btn-secondary w-full sm:w-auto"><Download className="w-4 h-4" /> Download tab / notation</a>)}
@@ -135,6 +142,8 @@ function PracticeRecorder({ student, task, onSaved, onGoLibrary }: { student: St
   const [seconds, setSeconds] = useState(0);
   const [feedback, setFeedback] = useState<FeedbackResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [reflection, setReflection] = useState('');
+  const [confidence, setConfidence] = useState(3);
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -165,8 +174,8 @@ function PracticeRecorder({ student, task, onSaved, onGoLibrary }: { student: St
       };
       rec.start(); setRecording(true); setSeconds(0);
       timerRef.current = window.setInterval(() => setSeconds((s) => s + 1), 1000);
-    } catch (err: any) {
-      setError(err?.message || 'Could not access the microphone. Check your browser permissions.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not access the microphone. Check your browser permissions.');
       cleanup();
     }
   };
@@ -184,6 +193,9 @@ function PracticeRecorder({ student, task, onSaved, onGoLibrary }: { student: St
     const { error: insErr } = await supabase.from('recordings').insert({
       task_id: task.id, student_id: student.id, audio_url: result.path,
       feedback_summary: fb?.summary || null,
+      reflection: reflection.trim() || null,
+      confidence,
+      review_status: 'needs_review',
     });
     setBusy(false);
     if (insErr) { setError(insErr.message); return; }
@@ -197,13 +209,31 @@ function PracticeRecorder({ student, task, onSaved, onGoLibrary }: { student: St
       <div className="flex items-center gap-2 mb-1"><Mic className="w-5 h-5 text-sage-700" /><h3 className="font-display text-lg font-semibold text-ink-800">Record your practice</h3></div>
       <p className="text-ink-500 text-sm mb-4">Play the task, then tap stop when you're done. You'll get a little feedback too.</p>
 
-      {saved && (<div className="rounded-xl bg-sage-50 border border-sage-200 text-sage-800 text-sm px-4 py-3 mb-4 flex items-start gap-2"><Sparkles className="w-4 h-4 mt-0.5 shrink-0" /><span>Nice work! Your recording is saved with feedback. It's in your library.</span></div>)}
+      {saved && (<div className="rounded-xl bg-sage-50 border border-sage-200 text-sage-800 text-sm px-4 py-3 mb-4 flex items-start gap-2"><Sparkles className="w-4 h-4 mt-0.5 shrink-0" /><span>Nice work! Your take is saved. Your teacher can now see your reflection and send you a next-step nudge.</span></div>)}
       {error && (<div className="rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3 mb-4 flex items-start gap-2"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /> <span>{error}</span></div>)}
 
       <div className="flex flex-col items-center gap-4 py-4 bg-sand-50 rounded-xl border border-sand-100">
         <div className={`w-20 h-20 rounded-full flex items-center justify-center transition ${recording ? 'bg-rose-500 text-white animate-pulse' : 'bg-white text-sage-700 shadow-soft'}`}><Mic className="w-9 h-9" /></div>
         {recording && (<div className="text-sm font-medium text-rose-600 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" /> Recording… {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</div>)}
         {recordingUrl && !recording && (<div className="w-full px-4"><audio src={recordingUrl} controls className="w-full" /></div>)}
+        {hasRecording && !recording && (
+          <div className="w-full px-4 space-y-3 text-left">
+            <div>
+              <label className="label text-xs" htmlFor="confidence">How did that take feel?</label>
+              <select id="confidence" className="input text-sm" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))}>
+                <option value={1}>1 — I found it really tough</option>
+                <option value={2}>2 — A little wobbly</option>
+                <option value={3}>3 — Getting there</option>
+                <option value={4}>4 — Feeling solid</option>
+                <option value={5}>5 — I’m proud of this take</option>
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs" htmlFor="reflection">One thing you noticed (optional)</label>
+              <textarea id="reflection" className="input min-h-[72px] resize-y text-sm" value={reflection} onChange={(e) => setReflection(e.target.value)} placeholder="e.g. The notes felt steadier when I slowed down." />
+            </div>
+          </div>
+        )}
         <div className="flex gap-3 flex-wrap justify-center">
           {recording ? (<button className="btn-danger" onClick={stop}><Square className="w-5 h-5" /> Stop</button>)
             : (<button className="btn-primary" onClick={start} disabled={busy}>{hasRecording ? <><Mic className="w-5 h-5" /> Record again</> : <><Mic className="w-5 h-5" /> Start recording</>}</button>)}
@@ -397,6 +427,10 @@ function RecordingRow({ rec }: { rec: Recording }) {
       {rec.feedback_summary && (
         <p className="text-xs text-ink-600 mt-2 flex items-start gap-1.5"><Sparkles className="w-3 h-3 mt-0.5 shrink-0 text-sage-600" /> {rec.feedback_summary}</p>
       )}
+      {rec.teacher_feedback && (
+        <div className="mt-2 rounded-lg bg-sage-50 border border-sage-100 p-2.5 text-xs text-ink-700"><span className="font-semibold text-sage-800">Your teacher’s nudge:</span> {rec.teacher_feedback}{rec.teacher_next_action && <div className="mt-1 text-sage-700 font-medium">Next: {rec.teacher_next_action}</div>}</div>
+      )}
+      {!rec.teacher_feedback && rec.review_status === 'needs_review' && <p className="text-xs text-amber-700 mt-2">Waiting for your teacher’s nudge.</p>}
     </li>
   );
 }

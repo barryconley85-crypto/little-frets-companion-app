@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { uploadTaskMedia } from '../lib/storage';
-import { Student, Task } from '../lib/types';
+import { uploadTaskMedia, resolveMediaUrl } from '../lib/storage';
+import { Student, Task, Recording } from '../lib/types';
 import {
   Users, Plus, Music4, Mail, UserCircle, Calendar, Video, FileMusic,
   X, Send, Loader2, Inbox, Clock, CheckCircle2, AlertCircle, Pencil,
@@ -259,6 +259,10 @@ function SetTaskForm({ student, existingTask, onDone }: { student: Student; exis
   const isEditing = !!existingTask;
   const [title, setTitle] = useState(existingTask?.title || '');
   const [notes, setNotes] = useState(existingTask?.notes || '');
+  const [mission, setMission] = useState(existingTask?.mission || '');
+  const [successCriteria, setSuccessCriteria] = useState(existingTask?.success_criteria || '');
+  const [dueAt, setDueAt] = useState(existingTask?.due_at ? new Date(existingTask.due_at).toISOString().slice(0, 16) : '');
+  const [estimatedMinutes, setEstimatedMinutes] = useState(existingTask?.estimated_minutes?.toString() || '');
   const [video, setVideo] = useState<File | null>(null);
   const [audio, setAudio] = useState<File | null>(null);
   const [tab, setTab] = useState<File | null>(null);
@@ -281,7 +285,14 @@ function SetTaskForm({ student, existingTask, onDone }: { student: Student; exis
     if (isEditing && existingTask) {
       const { data: updatedRow, error: updErr } = await supabase
         .from('tasks')
-        .update({ title: title.trim(), notes: notes.trim() || null })
+        .update({
+          title: title.trim(),
+          notes: notes.trim() || null,
+          mission: mission.trim() || null,
+          success_criteria: successCriteria.trim() || null,
+          due_at: dueAt ? new Date(dueAt).toISOString() : null,
+          estimated_minutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+        })
         .eq('id', existingTask.id)
         .select()
         .single();
@@ -298,6 +309,10 @@ function SetTaskForm({ student, existingTask, onDone }: { student: Student; exis
         group_name: null,
         title: title.trim(),
         notes: notes.trim() || null,
+        mission: mission.trim() || null,
+        success_criteria: successCriteria.trim() || null,
+        due_at: dueAt ? new Date(dueAt).toISOString() : null,
+        estimated_minutes: estimatedMinutes ? Number(estimatedMinutes) : null,
       }).select().single();
       if (insErr || !taskRow) {
         setError(insErr?.message || 'Could not create task.');
@@ -348,6 +363,24 @@ function SetTaskForm({ student, existingTask, onDone }: { student: Student; exis
         <label className="label" htmlFor="tnotes">Notes</label>
         <textarea id="tnotes" className="input min-h-[90px] resize-y" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What to focus on this week…" />
       </div>
+      <div>
+        <label className="label" htmlFor="tmission">Today’s mission</label>
+        <input id="tmission" className="input" value={mission} onChange={(e) => setMission(e.target.value)} placeholder="e.g. Keep the riff steady at a slow tempo" />
+      </div>
+      <div>
+        <label className="label" htmlFor="tcriteria">You’re done when…</label>
+        <input id="tcriteria" className="input" value={successCriteria} onChange={(e) => setSuccessCriteria(e.target.value)} placeholder="e.g. You can play it through twice without stopping" />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label className="label" htmlFor="tdue">Next check-in (optional)</label>
+          <input id="tdue" type="datetime-local" className="input" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
+        </div>
+        <div>
+          <label className="label" htmlFor="tminutes">Focused minutes (optional)</label>
+          <input id="tminutes" type="number" min="1" max="240" className="input" value={estimatedMinutes} onChange={(e) => setEstimatedMinutes(e.target.value)} placeholder="e.g. 10" />
+        </div>
+      </div>
       <div className="grid sm:grid-cols-2 gap-3">
         <FileInput label="Video of you playing (optional)" accept="video/*" icon={<Video className="w-4 h-4" />} file={video} onChange={setVideo} existingName={existingVideoName} />
         <FileInput label="Audio (optional)" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" icon={<FileMusic className="w-4 h-4" />} file={audio} onChange={setAudio} existingName={existingAudioName} />
@@ -379,7 +412,18 @@ function RequestsView() {
       .eq('students.teacher_id', profile.id)
       .order('created_at', { ascending: false });
     if (error) console.error(error);
-    setRows((data || []).map((r: any) => ({ id: r.id, song_name: r.song_name, note: r.note, status: r.status, created_at: r.created_at, student_name: r.students?.name || 'Unknown' })));
+      const requestRows = (data || []) as Array<{
+        id: string;
+        song_name: string;
+        note: string | null;
+        status: string;
+        created_at: string;
+        students: { name: string } | { name: string }[] | null;
+      }>;
+      setRows(requestRows.map((r) => {
+        const linkedStudent = Array.isArray(r.students) ? r.students[0] : r.students;
+        return { id: r.id, song_name: r.song_name, note: r.note, status: r.status, created_at: r.created_at, student_name: linkedStudent?.name || 'Unknown' };
+      }));
     setLoading(false);
   }, [profile]);
 
@@ -476,12 +520,18 @@ function HistoryView() {
 
 function StudentHistory({ student, onBack }: { student: Student; onBack: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   const load = useCallback(async () => {
-    const { data: taskRows } = await supabase.from('tasks').select('*').eq('student_id', student.id).order('created_at', { ascending: false });
+    setLoading(true);
+    const [{ data: taskRows }, { data: recordingRows }] = await Promise.all([
+      supabase.from('tasks').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
+      supabase.from('recordings').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
+    ]);
     setTasks((taskRows as Task[]) || []);
+    setRecordings((recordingRows as Recording[]) || []);
     setLoading(false);
   }, [student.id]);
 
@@ -503,31 +553,45 @@ function StudentHistory({ student, onBack }: { student: Student; onBack: () => v
         <EmptyState icon={<Clock className="w-8 h-8" />} title="No tasks yet" body="You haven't assigned this student any tasks yet." />
       ) : (
         <ul className="space-y-3">
-          {tasks.map((t) => (
-            <li key={t.id} className="card p-4">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-sage-100 text-sage-700 flex items-center justify-center shrink-0"><Music4 className="w-5 h-5" /></div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-ink-800">{t.title}</div>
-                  {t.notes && <p className="text-sm text-ink-600 mt-1 whitespace-pre-wrap">{t.notes}</p>}
-                  <div className="text-xs text-ink-400 mt-2 flex items-center gap-3 flex-wrap">
-                    <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(t.created_at).toLocaleDateString()}</span>
-                    {t.video_url && <span className="flex items-center gap-1 text-sage-700"><Video className="w-3 h-3" /> Video</span>}
-                    {t.audio_url && <span className="flex items-center gap-1 text-sage-700"><FileMusic className="w-3 h-3" /> Audio</span>}
-                    {t.tab_url && <span className="flex items-center gap-1 text-sage-700"><FileMusic className="w-3 h-3" /> Tab</span>}
+          {tasks.map((t) => {
+            const taskRecordings = recordings.filter((r) => r.task_id === t.id);
+            return (
+              <li key={t.id} className="card p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-sage-100 text-sage-700 flex items-center justify-center shrink-0"><Music4 className="w-5 h-5" /></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-ink-800">{t.title}</div>
+                    {t.notes && <p className="text-sm text-ink-600 mt-1 whitespace-pre-wrap">{t.notes}</p>}
+                    {t.mission && <p className="text-sm text-sage-800 mt-2"><span className="font-semibold">Mission:</span> {t.mission}</p>}
+                    <div className="text-xs text-ink-400 mt-2 flex items-center gap-3 flex-wrap">
+                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(t.created_at).toLocaleDateString()}</span>
+                      {t.video_url && <span className="flex items-center gap-1 text-sage-700"><Video className="w-3 h-3" /> Video</span>}
+                      {t.audio_url && <span className="flex items-center gap-1 text-sage-700"><FileMusic className="w-3 h-3" /> Audio</span>}
+                      {t.tab_url && <span className="flex items-center gap-1 text-sage-700"><FileMusic className="w-3 h-3" /> Tab</span>}
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    className="btn-ghost p-2 shrink-0"
+                    aria-label="Edit task"
+                    onClick={() => setEditingTask(t)}
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="btn-ghost p-2 shrink-0"
-                  aria-label="Edit task"
-                  onClick={() => setEditingTask(t)}
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-              </div>
-            </li>
-          ))}
+                <div className="mt-4 pt-4 border-t border-ink-100">
+                  <div className="text-sm font-semibold text-ink-700 mb-2">Practice takes</div>
+                  {taskRecordings.length === 0 ? (
+                    <p className="text-sm text-ink-400">No take yet. The learner will see this assignment in their practice view.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {taskRecordings.map((recording) => <TeacherRecordingReview key={recording.id} recording={recording} onSaved={load} />)}
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
       {editingTask && (
@@ -539,6 +603,71 @@ function StudentHistory({ student, onBack }: { student: Student; onBack: () => v
           />
         </Modal>
       )}
+    </div>
+  );
+}
+
+function TeacherRecordingReview({ recording, onSaved }: { recording: Recording; onSaved: () => void }) {
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [loadingAudio, setLoadingAudio] = useState(true);
+  const [feedback, setFeedback] = useState(recording.teacher_feedback || '');
+  const [nextAction, setNextAction] = useState(recording.teacher_next_action || '');
+  const [status, setStatus] = useState<Recording['review_status']>(recording.review_status || 'needs_review');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const url = await resolveMediaUrl('practice-recordings', recording.audio_url);
+      if (active) { setAudioUrl(url); setLoadingAudio(false); }
+    })();
+    return () => { active = false; };
+  }, [recording.audio_url]);
+
+  const saveReview = async () => {
+    setSaving(true);
+    setError(null);
+    const { error: updateError } = await supabase.from('recordings').update({
+      teacher_feedback: feedback.trim() || null,
+      teacher_next_action: nextAction.trim() || null,
+      review_status: status,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', recording.id);
+    setSaving(false);
+    if (updateError) { setError(updateError.message); return; }
+    onSaved();
+  };
+
+  return (
+    <div className="rounded-xl bg-sand-50 border border-sand-100 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap text-xs text-ink-500">
+        <span>{new Date(recording.created_at).toLocaleString()}</span>
+        <span className={`px-2 py-0.5 rounded-full font-medium ${status === 'ready' ? 'bg-sage-100 text-sage-700' : status === 'retry' ? 'bg-amber-100 text-amber-700' : 'bg-ink-100 text-ink-600'}`}>{status.replace('_', ' ')}</span>
+      </div>
+      {loadingAudio ? <div className="text-xs text-ink-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Loading take…</div> : audioUrl ? <audio src={audioUrl} controls className="w-full" /> : <div className="text-xs text-rose-600">Could not load the practice take.</div>}
+      {(recording.reflection || recording.confidence) && <div className="text-xs text-ink-600 rounded-lg bg-white p-2.5 border border-ink-100">{recording.confidence && <div><span className="font-semibold">Learner confidence:</span> {recording.confidence}/5</div>}{recording.reflection && <div className="mt-1"><span className="font-semibold">They noticed:</span> {recording.reflection}</div>}</div>}
+      <div>
+        <label className="label text-xs" htmlFor={`feedback-${recording.id}`}>One helpful nudge</label>
+        <textarea id={`feedback-${recording.id}`} className="input min-h-[72px] resize-y text-sm" value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Name one win, then give one precise next step." />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label className="label text-xs" htmlFor={`next-${recording.id}`}>What should happen next?</label>
+          <input id={`next-${recording.id}`} className="input text-sm" value={nextAction} onChange={(e) => setNextAction(e.target.value)} placeholder="e.g. Try it again at 70 BPM" />
+        </div>
+        <div>
+          <label className="label text-xs" htmlFor={`status-${recording.id}`}>Outcome</label>
+          <select id={`status-${recording.id}`} className="input text-sm" value={status} onChange={(e) => setStatus(e.target.value as Recording['review_status'])}>
+            <option value="needs_review">Needs review</option>
+            <option value="retry">Try again</option>
+            <option value="ready">Ready for next step</option>
+            <option value="discuss_live">Discuss live</option>
+          </select>
+        </div>
+      </div>
+      {error && <div className="text-xs text-rose-700 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2">{error}</div>}
+      <button type="button" className="btn-primary w-full text-sm" onClick={saveReview} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send learner nudge</button>
     </div>
   );
 }
