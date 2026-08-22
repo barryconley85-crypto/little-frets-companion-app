@@ -2,23 +2,45 @@ import { PitchDetector } from 'pitchy';
 
 export interface FeedbackResult {
   summary: string;
-  inTunePct: number;       // 0-100, share of detected NOTES within tolerance
-  steadyScore: number;     // 0-100, steadiness of note onsets
-  noteCount: number;       // actual number of distinct notes detected
+  tip: string;
+  inTunePct: number;
+  steadyScore: number | null;
+  noteCount: number;
+  signalQuality: 'clear' | 'fair' | 'unclear';
+  pitchSpreadCents: number | null;
 }
 
-interface NoteEvent {
-  time: number;
-  freq: number;       // representative (median) frequency for this note
-  midi: number;       // nearest integer MIDI note number
-  cents: number;       // deviation from that semitone, -50..+50
+export interface PitchReading {
+  frequency: number;
+  midi: number;
+  cents: number;
+  clarity: number;
+  rms: number;
+}
+
+export interface GuitarString {
+  id: 'E2' | 'A2' | 'D3' | 'G3' | 'B3' | 'E4';
+  label: string;
+  shortLabel: string;
+  frequency: number;
 }
 
 const A4_FREQ = 440;
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const MIN_GUITAR_FREQ = 70;
+const MAX_GUITAR_FREQ = 1400;
 
-function freqToMidi(freq: number): number {
-  return 69 + 12 * Math.log2(freq / A4_FREQ);
+export const STANDARD_GUITAR_TUNING: GuitarString[] = [
+  { id: 'E2', label: '6th string · low E', shortLabel: 'E', frequency: 82.4069 },
+  { id: 'A2', label: '5th string · A', shortLabel: 'A', frequency: 110 },
+  { id: 'D3', label: '4th string · D', shortLabel: 'D', frequency: 146.8324 },
+  { id: 'G3', label: '3rd string · G', shortLabel: 'G', frequency: 195.9977 },
+  { id: 'B3', label: '2nd string · B', shortLabel: 'B', frequency: 246.9417 },
+  { id: 'E4', label: '1st string · high E', shortLabel: 'E', frequency: 329.6276 },
+];
+
+export function freqToMidi(frequency: number): number {
+  return 69 + 12 * Math.log2(frequency / A4_FREQ);
 }
 
 export function midiToNoteName(midi: number): string {
@@ -28,131 +50,148 @@ export function midiToNoteName(midi: number): string {
   return `${name}${octave}`;
 }
 
+export function centsFromFrequency(frequency: number, targetFrequency: number): number {
+  return 1200 * Math.log2(frequency / targetFrequency);
+}
+
+export function closestGuitarString(frequency: number): GuitarString {
+  return STANDARD_GUITAR_TUNING.reduce((closest, candidate) => (
+    Math.abs(centsFromFrequency(frequency, candidate.frequency)) < Math.abs(centsFromFrequency(frequency, closest.frequency)) ? candidate : closest
+  ));
+}
+
+export function rmsOf(samples: Float32Array): number {
+  let sum = 0;
+  for (let index = 0; index < samples.length; index += 1) sum += samples[index] * samples[index];
+  return Math.sqrt(sum / samples.length);
+}
+
+export function getPitchReading(samples: Float32Array, sampleRate: number, detector: PitchDetector<Float32Array>): PitchReading | null {
+  const rms = rmsOf(samples);
+  const [frequency, clarity] = detector.findPitch(samples, sampleRate);
+  if (!Number.isFinite(frequency) || frequency < MIN_GUITAR_FREQ || frequency > MAX_GUITAR_FREQ || clarity < 0.72 || rms < 0.006) return null;
+  const exactMidi = freqToMidi(frequency);
+  const midi = Math.round(exactMidi);
+  return { frequency, midi, cents: (exactMidi - midi) * 100, clarity, rms };
+}
+
+function median(values: number[]): number {
+  const ordered = [...values].sort((left, right) => left - right);
+  return ordered[Math.floor(ordered.length / 2)];
+}
+
+function standardDeviation(values: number[], mean: number): number {
+  if (values.length === 0) return 0;
+  return Math.sqrt(values.reduce((total, value) => total + (value - mean) ** 2, 0) / values.length);
+}
+
+function groupStablePitches(readings: Array<PitchReading & { time: number }>) {
+  const groups: Array<Array<PitchReading & { time: number }>> = [];
+  for (const reading of readings) {
+    const previousGroup = groups[groups.length - 1];
+    const previous = previousGroup?.[previousGroup.length - 1];
+    const startsNewNote = !previous || reading.time - previous.time > 0.18 || Math.abs(reading.midi - previous.midi) >= 1;
+    if (startsNewNote) groups.push([reading]);
+    else previousGroup.push(reading);
+  }
+  return groups
+    .filter((group) => group.length >= 2)
+    .map((group) => {
+      const frequencies = group.map((item) => item.frequency);
+      const cents = group.map((item) => item.cents);
+      return { time: group[0].time, frequency: median(frequencies), cents: median(cents) };
+    });
+}
+
 /**
- * Analyse a practice recording for guitar-specific pitch + rhythm accuracy.
- * v2: detects real note onsets (energy-based transient detection) rather than
- * treating every audio frame as a note, then checks each note's pitch against
- * the nearest true semitone (equal temperament) rather than just the open strings.
+ * Local, monophonic guitar-practice analysis. It deliberately gives a
+ * confidence warning for chords, noisy rooms, or unclear strings rather than
+ * pretending that a single microphone can grade every guitar performance.
  */
 export async function analyzeRecording(blob: Blob): Promise<FeedbackResult> {
   const arrayBuffer = await blob.arrayBuffer();
   const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) throw new Error('Audio analysis is not supported in this browser.');
-  const ctx = new AudioCtx();
-  let decoded: AudioBuffer;
+  const context = new AudioCtx();
+  let audio: AudioBuffer;
   try {
-    decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    audio = await context.decodeAudioData(arrayBuffer.slice(0));
   } finally {
-    ctx.close();
+    await context.close();
   }
 
-  const channel = decoded.getChannelData(0);
-  const sampleRate = decoded.sampleRate;
-
-  // Guitar frequency range: low E2 (~82Hz) to a generous high fretted E6 (~1320Hz),
-  // with a little headroom on both ends to tolerate slightly flat/sharp playing.
-  const MIN_FREQ = 70;
-  const MAX_FREQ = 1400;
-
-  const frameSize = 2048;
-  const hop = 512; // finer hop for onset resolution (~11.6ms at 44.1kHz)
+  const samples = audio.getChannelData(0);
+  const frameSize = 4096;
+  const hop = 512;
   const detector = PitchDetector.forFloat32Array(frameSize);
-  detector.clarityThreshold = 0.6;
-  const minVolume = 0.01;
+  detector.clarityThreshold = 0.72;
+  const readings: Array<PitchReading & { time: number }> = [];
 
-  // --- Pass 1: per-hop RMS energy, for onset detection ---
-  const energies: number[] = [];
-  for (let i = 0; i + frameSize < channel.length; i += hop) {
-    const frame = channel.subarray(i, i + frameSize);
-    let rms = 0;
-    for (let k = 0; k < frame.length; k++) rms += frame[k] * frame[k];
-    energies.push(Math.sqrt(rms / frame.length));
+  for (let offset = 0; offset + frameSize < samples.length; offset += hop) {
+    const reading = getPitchReading(samples.subarray(offset, offset + frameSize), audio.sampleRate, detector);
+    if (reading) readings.push({ ...reading, time: offset / audio.sampleRate });
   }
 
-  if (energies.length === 0) {
-    return { summary: "I couldn't hear anything — try recording again a bit closer to the mic.", inTunePct: 0, steadyScore: 0, noteCount: 0 };
+  if (readings.length < 4) {
+    return {
+      summary: "I couldn't hear a clear single-note signal in this take.",
+      tip: 'Try one string or a short single-note phrase, closer to the mic and away from other sound.',
+      inTunePct: 0,
+      steadyScore: null,
+      noteCount: 0,
+      signalQuality: 'unclear',
+      pitchSpreadCents: null,
+    };
   }
 
-  // --- Onset detection: energy rise above a local moving average, with a minimum gap ---
-  const onsetHopIndices: number[] = [];
-  const smoothWindow = 6; // ~70ms of local history
-  const minOnsetGapSec = 0.12; // don't double-trigger on the same note
-  let lastOnsetTime = -Infinity;
-  for (let i = 1; i < energies.length; i++) {
-    const start = Math.max(0, i - smoothWindow);
-    let localAvg = 0;
-    for (let k = start; k < i; k++) localAvg += energies[k];
-    localAvg = localAvg / Math.max(1, i - start);
-    const rise = energies[i] - localAvg;
-    const time = (i * hop) / sampleRate;
-    if (energies[i] > minVolume && rise > 0.012 && time - lastOnsetTime > minOnsetGapSec) {
-      onsetHopIndices.push(i);
-      lastOnsetTime = time;
-    }
+  const stableNotes = groupStablePitches(readings);
+  const medianClarity = median(readings.map((reading) => reading.clarity));
+  const signalQuality: FeedbackResult['signalQuality'] = medianClarity >= 0.88 && stableNotes.length >= 2 ? 'clear' : medianClarity >= 0.79 ? 'fair' : 'unclear';
+  const pitchSpreadCents = Math.round(standardDeviation(readings.map((reading) => reading.cents), readings.reduce((sum, reading) => sum + reading.cents, 0) / readings.length));
+
+  if (stableNotes.length === 0 || signalQuality === 'unclear') {
+    return {
+      summary: 'I heard sound, but not a stable enough pitch signal to give fair feedback.',
+      tip: 'Tune first, then record a clean one-note line. Chords and busy rooms can confuse a single-mic pitch coach.',
+      inTunePct: 0,
+      steadyScore: null,
+      noteCount: stableNotes.length,
+      signalQuality: 'unclear',
+      pitchSpreadCents,
+    };
   }
 
-  if (onsetHopIndices.length === 0) {
-    return { summary: "I couldn't hear clear notes — try playing a little louder or recording in a quieter spot.", inTunePct: 0, steadyScore: 0, noteCount: 0 };
+  const centsTolerance = 22;
+  const inTunePct = Math.round((stableNotes.filter((note) => Math.abs(note.cents) <= centsTolerance).length / stableNotes.length) * 100);
+  let steadyScore: number | null = null;
+  if (stableNotes.length >= 3) {
+    const gaps = stableNotes.slice(1).map((note, index) => note.time - stableNotes[index].time);
+    const averageGap = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+    const variation = standardDeviation(gaps, averageGap) / Math.max(averageGap, 0.001);
+    steadyScore = Math.max(0, Math.round(100 * Math.exp(-variation * 1.25)));
   }
 
-  // --- For each onset, sample pitch across the note's sustain and take a robust (median) reading ---
-  const notes: NoteEvent[] = [];
-  for (let n = 0; n < onsetHopIndices.length; n++) {
-    const startHop = onsetHopIndices[n];
-    const endHop = n + 1 < onsetHopIndices.length ? onsetHopIndices[n + 1] : energies.length;
-    // Skip the first ~2 hops (attack transient / pick noise) where possible.
-    const sampleStart = Math.min(startHop + 2, endHop - 1);
-    const freqs: number[] = [];
-    for (let h = sampleStart; h < endHop; h++) {
-      const sampleIdx = h * hop;
-      if (sampleIdx + frameSize >= channel.length) break;
-      const frame = channel.subarray(sampleIdx, sampleIdx + frameSize);
-      const [pitch, clarity] = detector.findPitch(frame, sampleRate);
-      if (clarity >= 0.6 && pitch >= MIN_FREQ && pitch <= MAX_FREQ) freqs.push(pitch);
-    }
-    if (freqs.length === 0) continue;
-    freqs.sort((a, b) => a - b);
-    const median = freqs[Math.floor(freqs.length / 2)];
-    const midiExact = freqToMidi(median);
-    const midiRounded = Math.round(midiExact);
-    const cents = (midiExact - midiRounded) * 100;
-    notes.push({ time: (startHop * hop) / sampleRate, freq: median, midi: midiRounded, cents });
-  }
-
-  if (notes.length === 0) {
-    return { summary: "I heard some sound but couldn't make out clear notes — try recording again a little closer to the mic.", inTunePct: 0, steadyScore: 0, noteCount: 0 };
-  }
-
-  // --- Pitch accuracy: cents deviation from the nearest true semitone ---
-  const centsTolerance = 30; // ±30 cents ≈ a third of a semitone — generous for beginners, still meaningful
-  const inTuneCount = notes.filter((n) => Math.abs(n.cents) <= centsTolerance).length;
-  const inTunePct = Math.round((inTuneCount / notes.length) * 100);
-
-  // --- Rhythm: variance of the gaps between real note onsets ---
-  let steadyScore = 70;
-  if (notes.length >= 3) {
-    const gaps: number[] = [];
-    for (let i = 1; i < notes.length; i++) gaps.push(notes[i].time - notes[i - 1].time);
-    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-    const variance = gaps.reduce((a, b) => a + (b - mean) ** 2, 0) / gaps.length;
-    const cv = mean > 0 ? Math.sqrt(variance) / mean : 1;
-    steadyScore = Math.max(0, Math.round(100 * Math.exp(-cv * 1.5)));
-  }
-
-  const summary = buildSummary(inTunePct, steadyScore, notes.length);
-  return { summary, inTunePct, steadyScore, noteCount: notes.length };
+  return {
+    summary: buildSummary(inTunePct, steadyScore, stableNotes.length, signalQuality),
+    tip: buildTip(inTunePct, steadyScore, pitchSpreadCents),
+    inTunePct,
+    steadyScore,
+    noteCount: stableNotes.length,
+    signalQuality,
+    pitchSpreadCents,
+  };
 }
 
-function buildSummary(inTunePct: number, steadyScore: number, noteCount: number): string {
-  const parts: string[] = [];
-  if (inTunePct >= 80) parts.push('Great ear — your notes are landing right on pitch.');
-  else if (inTunePct >= 55) parts.push('Mostly in tune — a few notes drifted a little sharp or flat.');
-  else parts.push('Keep stretching those fingers — quite a few notes were off pitch this time.');
+function buildSummary(inTunePct: number, steadyScore: number | null, noteCount: number, signalQuality: FeedbackResult['signalQuality']) {
+  const pitch = inTunePct >= 85 ? 'Your pitch centre sounded settled on this clear take.' : inTunePct >= 60 ? 'Your pitch centre was often close, with a few notes drifting.' : 'This take suggests that pitch placement needs a slower, more careful pass.';
+  const rhythm = steadyScore === null ? 'There were not enough separate notes to judge spacing fairly.' : steadyScore >= 82 ? 'The spacing between notes was pleasingly even.' : steadyScore >= 58 ? 'The note spacing was mostly even.' : 'The note spacing moved around; slowing down should help.';
+  const confidence = signalQuality === 'clear' ? 'The microphone signal was clear.' : 'The microphone signal was usable, but not perfect.';
+  return `${pitch} ${rhythm} ${confidence} Heard ${noteCount} stable note${noteCount === 1 ? '' : 's'}.`;
+}
 
-  if (steadyScore >= 80) parts.push('Lovely steady timing!');
-  else if (steadyScore >= 55) parts.push('Your rhythm is mostly steady.');
-  else parts.push('Try tapping your foot to keep a steady beat.');
-
-  parts.push(`Heard ${noteCount} note${noteCount === 1 ? '' : 's'}.`);
-  return parts.join(' ');
+function buildTip(inTunePct: number, steadyScore: number | null, pitchSpreadCents: number) {
+  if (pitchSpreadCents > 28) return 'Start with the tuner, then hold each note for a moment before moving on.';
+  if (inTunePct < 60) return 'Try the phrase at half speed and listen for the centre of each note before changing position.';
+  if (steadyScore !== null && steadyScore < 60) return 'Keep the same slow tempo and tap a quiet pulse before every note.';
+  return 'Keep this calm pace and record one more short phrase to compare for yourself.';
 }

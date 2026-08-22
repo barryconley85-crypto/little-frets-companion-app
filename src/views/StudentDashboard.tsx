@@ -3,17 +3,20 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { uploadPracticeRecording, resolveMediaUrl } from '../lib/storage';
 import { analyzeRecording, FeedbackResult } from '../lib/pitch';
+import GuitarTuner from '../components/GuitarTuner';
 import { Student, Task, Recording } from '../lib/types';
 import {
   Activity, AlertCircle, Calendar, Clock, Download, FileMusic, Loader2,
   Mic, Music4, Play, Sparkles, Square, TrendingUp, UserCircle, Video,
 } from 'lucide-react';
 
-type View = 'task' | 'library';
+type View = 'task' | 'library' | 'tuner';
 
 export default function StudentDashboard({ view, onNavigate }: { view: string; onNavigate: (view: string) => void }) {
-  const active = (['task', 'library'].includes(view) ? view : 'task') as View;
-  return active === 'library' ? <LibraryView /> : <TaskView onNavigate={onNavigate} />;
+  const active = (['task', 'library', 'tuner'].includes(view) ? view : 'task') as View;
+  if (active === 'library') return <LibraryView />;
+  if (active === 'tuner') return <GuitarTuner />;
+  return <TaskView onNavigate={onNavigate} />;
 }
 
 function useStudent() {
@@ -195,10 +198,12 @@ function PracticeRecorder({ student, task, onSaved, onGoLibrary }: { student: St
 }
 
 function FeedbackCard({ feedback }: { feedback: FeedbackResult }) {
-  return <div className="mt-4 rounded-xl border border-sage-200 bg-sage-50 p-4"><div className="flex items-center gap-2 mb-2 text-sage-800"><Sparkles className="w-4 h-4" /><span className="font-semibold text-sm">Your playback signal</span></div><p className="text-sm text-ink-700 mb-3">{feedback.summary}</p><div className="grid grid-cols-2 gap-3"><Meter icon={<Activity className="w-4 h-4" />} label="In tune" value={feedback.inTunePct} /><Meter icon={<TrendingUp className="w-4 h-4" />} label="Steady timing" value={feedback.steadyScore} /></div></div>;
+  const signalLabel = feedback.signalQuality === 'clear' ? 'Clear signal' : feedback.signalQuality === 'fair' ? 'Fair signal' : 'Unclear signal';
+  return <div className="mt-4 rounded-xl border border-sage-200 bg-sage-50 p-4"><div className="flex items-center justify-between gap-3 mb-2"><div className="flex items-center gap-2 text-sage-800"><Sparkles className="w-4 h-4" /><span className="font-semibold text-sm">Your private pitch coach</span></div><span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${feedback.signalQuality === 'clear' ? 'bg-sage-200 text-sage-800' : feedback.signalQuality === 'fair' ? 'bg-amber-100 text-amber-800' : 'bg-ink-100 text-ink-600'}`}>{signalLabel}</span></div><p className="text-sm text-ink-700 mb-3">{feedback.summary}</p><div className="grid grid-cols-2 gap-3"><Meter icon={<Activity className="w-4 h-4" />} label="Pitch centre" value={feedback.inTunePct} /><Meter icon={<TrendingUp className="w-4 h-4" />} label="Note spacing" value={feedback.steadyScore} /></div><p className="mt-3 rounded-lg bg-white/70 border border-sage-100 px-3 py-2 text-xs text-sage-900"><span className="font-semibold">Try next:</span> {feedback.tip}</p><p className="mt-2 text-[11px] text-ink-500">This is local signal feedback, not a grade. Chords, background sound, and unclear notes can reduce confidence.</p></div>;
 }
 
-function Meter({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+function Meter({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | null }) {
+  if (value === null) return <div><div className="flex items-center justify-between text-xs text-ink-600 mb-1"><span className="flex items-center gap-1">{icon} {label}</span><span className="font-semibold">Not enough notes</span></div><div className="h-2 rounded-full bg-ink-100 overflow-hidden"><div className="h-full w-1/4 bg-ink-300 rounded-full" /></div></div>;
   const color = value >= 75 ? 'bg-sage-500' : value >= 50 ? 'bg-amber-400' : 'bg-rose-400';
   return <div><div className="flex items-center justify-between text-xs text-ink-600 mb-1"><span className="flex items-center gap-1">{icon} {label}</span><span className="font-semibold">{value}%</span></div><div className="h-2 rounded-full bg-ink-100 overflow-hidden"><div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${value}%` }} /></div></div>;
 }
