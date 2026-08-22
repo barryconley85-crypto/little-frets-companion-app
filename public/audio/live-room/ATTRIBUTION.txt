@@ -1,2 +1,0 @@
-Live Room piano and electric-bass samples: nbrosowsky/tonejs-instruments.
-Source repository code is MIT; samples are CC BY 3.0. See https://github.com/nbrosowsky/tonejs-instruments
