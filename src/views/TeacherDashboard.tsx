@@ -6,20 +6,25 @@ import { Student, Task, Recording } from '../lib/types';
 import {
   Users, Plus, Music4, Mail, UserCircle, Calendar, Video, FileMusic,
   X, Send, Loader2, Inbox, Clock, CheckCircle2, AlertCircle, Pencil,
+  MessageCircle, ArrowRight, Headphones,
 } from 'lucide-react';
 
 type View = 'students' | 'requests' | 'history';
 
 export default function TeacherDashboard({ view, onNavigate }: { view: string; onNavigate: (v: string) => void }) {
   const v = (['students', 'requests', 'history'].includes(view) ? view : 'students') as View;
-  if (v === 'students') return <StudentsView onNavigate={onNavigate} />;
+  const [historyFocus, setHistoryFocus] = useState<Student | null>(null);
+
+  if (v === 'students') {
+    return <StudentsView onNavigate={onNavigate} onOpenForReview={(student) => { setHistoryFocus(student); onNavigate('history'); }} />;
+  }
   if (v === 'requests') return <RequestsView />;
-  return <HistoryView />;
+  return <HistoryView initialStudent={historyFocus} onClearFocus={() => setHistoryFocus(null)} />;
 }
 
 /* ---------------- Students view ---------------- */
 
-function StudentsView({ onNavigate }: { onNavigate: (v: string) => void }) {
+function StudentsView({ onNavigate, onOpenForReview }: { onNavigate: (v: string) => void; onOpenForReview: (student: Student) => void }) {
   const { profile } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +57,8 @@ function StudentsView({ onNavigate }: { onNavigate: (v: string) => void }) {
           <Plus className="w-5 h-5" /> Add student
         </button>
       </div>
+
+      {profile && <CoachDesk teacherId={profile.id} students={students} onOpenForReview={onOpenForReview} />}
 
       {loading ? (
         <div className="card p-8 text-center text-ink-400 flex items-center justify-center gap-2">
@@ -111,6 +118,94 @@ function StudentsView({ onNavigate }: { onNavigate: (v: string) => void }) {
         />
       )}
     </div>
+  );
+}
+
+type NudgeQueueItem = {
+  id: string;
+  created_at: string;
+  confidence: number | null;
+  reflection: string | null;
+  student: Student;
+  taskTitle: string;
+};
+
+function CoachDesk({ teacherId, students, onOpenForReview }: { teacherId: string; students: Student[]; onOpenForReview: (student: Student) => void }) {
+  const [queue, setQueue] = useState<NudgeQueueItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('recordings')
+        .select('id, created_at, confidence, reflection, students!inner(id, name, email, group_name, teacher_id, user_id, created_at), tasks(title)')
+        .eq('students.teacher_id', teacherId)
+        .eq('review_status', 'needs_review')
+        .order('created_at', { ascending: false })
+        .limit(6);
+      if (error) console.error(error);
+      if (!active) return;
+
+      const parsed = ((data || []) as Array<{
+        id: string;
+        created_at: string;
+        confidence: number | null;
+        reflection: string | null;
+        students: Student | Student[] | null;
+        tasks: { title: string } | { title: string }[] | null;
+      }>).map((row) => {
+        const student = Array.isArray(row.students) ? row.students[0] : row.students;
+        const task = Array.isArray(row.tasks) ? row.tasks[0] : row.tasks;
+        return student ? { id: row.id, created_at: row.created_at, confidence: row.confidence, reflection: row.reflection, student: student as Student, taskTitle: task?.title || 'Practice take' } : null;
+      }).filter((item): item is NudgeQueueItem => item !== null);
+      setQueue(parsed);
+      setLoading(false);
+    })();
+    return () => { active = false; };
+  }, [teacherId]);
+
+  const linkedLearners = students.filter((student) => Boolean(student.user_id)).length;
+
+  return (
+    <section className="teacher-command">
+      <div className="relative z-10 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="growth-eyebrow">Little Frets coaching desk</p>
+          <h2 className="font-display text-3xl font-semibold tracking-tight">Your next human moments</h2>
+          <p className="mt-2 max-w-2xl text-sm text-white/70">The habit is not the task. It is the learner knowing that someone heard them and knows exactly what to try next.</p>
+        </div>
+        <div className="teacher-command-mark" aria-hidden="true"><Headphones className="w-7 h-7" /></div>
+      </div>
+
+      <div className="relative z-10 mt-5 grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="teacher-stat"><span className="teacher-stat-value">{loading ? '…' : queue.length}</span><span className="teacher-stat-label">takes in your desk</span></div>
+        <div className="teacher-stat"><span className="teacher-stat-value">{linkedLearners}</span><span className="teacher-stat-label">connected learners</span></div>
+        <div className="teacher-stat"><span className="teacher-stat-value">{students.length}</span><span className="teacher-stat-label">learners in studio</span></div>
+      </div>
+
+      <div className="relative z-10 mt-5">
+        <div className="flex items-center justify-between gap-3 mb-2"><span className="text-xs font-bold uppercase tracking-[0.14em] text-white/55">Ready for a nudge</span><span className="text-xs text-white/55">Listen, name one win, set one next move.</span></div>
+        {loading ? (
+          <div className="teacher-queue-empty"><Loader2 className="w-4 h-4 animate-spin" /> Loading your coaching desk…</div>
+        ) : queue.length === 0 ? (
+          <div className="teacher-queue-empty"><CheckCircle2 className="w-4 h-4 text-sage-200" /> Your desk is clear. The next learner take will appear here as soon as it is submitted.</div>
+        ) : (
+          <div className="space-y-2">
+            {queue.map((item) => (
+              <button key={item.id} type="button" className="teacher-queue-item" onClick={() => onOpenForReview(item.student)}>
+                <div className="teacher-queue-icon"><MessageCircle className="w-4 h-4" /></div>
+                <div className="min-w-0 flex-1 text-left">
+                  <div className="flex items-center gap-2 flex-wrap"><span className="font-semibold text-ink-900">{item.student.name}</span><span className="text-xs text-ink-500">{item.taskTitle}</span></div>
+                  <p className="mt-0.5 text-xs text-ink-500 truncate">{item.reflection ? `“${item.reflection}”` : item.confidence ? `They felt ${item.confidence}/5 about this take.` : 'A fresh take is ready for your ears.'}</p>
+                </div>
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-sage-800">Listen &amp; nudge <ArrowRight className="w-3.5 h-3.5" /></span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -485,11 +580,11 @@ function RequestsView() {
 
 /* ---------------- History view (per-student drill-down) ---------------- */
 
-function HistoryView() {
+function HistoryView({ initialStudent, onClearFocus }: { initialStudent: Student | null; onClearFocus: () => void }) {
   const { profile } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<Student | null>(null);
+  const [selected, setSelected] = useState<Student | null>(initialStudent);
 
   useEffect(() => {
     (async () => {
@@ -503,7 +598,7 @@ function HistoryView() {
 
   if (loading) return <div className="card p-8 text-center text-ink-400 flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>;
 
-  if (selected) return <StudentHistory student={selected} onBack={() => setSelected(null)} />;
+  if (selected) return <StudentHistory student={selected} onBack={() => { setSelected(null); onClearFocus(); }} />;
 
   return (
     <div className="space-y-6">
@@ -622,6 +717,29 @@ function StudentHistory({ student, onBack }: { student: Student; onBack: () => v
   );
 }
 
+const NUDGE_STARTERS = [
+  {
+    label: 'Name the win',
+    feedback: 'I can hear a real improvement here. Keep trusting the part that felt more controlled.',
+    nextAction: 'Record one more short take and keep that same feeling.',
+  },
+  {
+    label: 'Steady the pulse',
+    feedback: 'The musical idea is there. Let’s make the pulse feel just as dependable from the first note to the last.',
+    nextAction: 'Try one more take a little slower, listening for even spacing between every beat.',
+  },
+  {
+    label: 'Release the tension',
+    feedback: 'You are close. The next gain will come from staying relaxed rather than pushing harder.',
+    nextAction: 'Pause, loosen your hands, then repeat the smallest section at an easy pace.',
+  },
+  {
+    label: 'Make it musical',
+    feedback: 'You have the notes. Now give the phrase a little shape so it sounds like music, not an exercise.',
+    nextAction: 'Repeat the phrase and make the first note of each bar feel intentional.',
+  },
+] as const;
+
 function TeacherRecordingReview({ recording, onSaved }: { recording: Recording; onSaved: () => void }) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loadingAudio, setLoadingAudio] = useState(true);
@@ -662,13 +780,28 @@ function TeacherRecordingReview({ recording, onSaved }: { recording: Recording; 
       </div>
       {loadingAudio ? <div className="text-xs text-ink-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Loading take…</div> : audioUrl ? <audio src={audioUrl} controls className="w-full" /> : <div className="text-xs text-rose-600">Could not load the practice take.</div>}
       {(recording.reflection || recording.confidence) && <div className="text-xs text-ink-600 rounded-lg bg-white p-2.5 border border-ink-100">{recording.confidence && <div><span className="font-semibold">Learner confidence:</span> {recording.confidence}/5</div>}{recording.reflection && <div className="mt-1"><span className="font-semibold">They noticed:</span> {recording.reflection}</div>}</div>}
+      <div className="rounded-xl border border-ink-100 bg-white p-3">
+        <div className="flex items-center justify-between gap-3 mb-2"><span className="text-xs font-bold uppercase tracking-[0.12em] text-ink-500">Choose a coaching lens</span><span className="text-xs text-ink-400">Then make it yours</span></div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {NUDGE_STARTERS.map((starter) => (
+            <button
+              key={starter.label}
+              type="button"
+              className="rounded-lg border border-sand-200 bg-sand-50 px-2.5 py-2 text-left text-xs font-semibold text-ink-700 transition hover:border-sage-300 hover:bg-sage-50 hover:text-sage-800"
+              onClick={() => { setFeedback(starter.feedback); setNextAction(starter.nextAction); setStatus('retry'); }}
+            >
+              {starter.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div>
-        <label className="label text-xs" htmlFor={`feedback-${recording.id}`}>One helpful nudge</label>
+        <label className="label text-xs" htmlFor={`feedback-${recording.id}`}>Your nudge</label>
         <textarea id={`feedback-${recording.id}`} className="input min-h-[72px] resize-y text-sm" value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Name one win, then give one precise next step." />
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
         <div>
-          <label className="label text-xs" htmlFor={`next-${recording.id}`}>What should happen next?</label>
+          <label className="label text-xs" htmlFor={`next-${recording.id}`}>The learner’s next move</label>
           <input id={`next-${recording.id}`} className="input text-sm" value={nextAction} onChange={(e) => setNextAction(e.target.value)} placeholder="e.g. Try it again at 70 BPM" />
         </div>
         <div>
@@ -682,7 +815,7 @@ function TeacherRecordingReview({ recording, onSaved }: { recording: Recording; 
         </div>
       </div>
       {error && <div className="text-xs text-rose-700 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2">{error}</div>}
-      <button type="button" className="btn-primary w-full text-sm" onClick={saveReview} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send learner nudge</button>
+      <button type="button" className="btn-primary w-full text-sm" onClick={saveReview} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send the next musical move</button>
     </div>
   );
 }

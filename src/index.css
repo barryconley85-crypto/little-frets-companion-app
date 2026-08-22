@@ -105,4 +105,40 @@
   .passport-stat-label {
     @apply mt-0.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-white/55;
   }
+
+  .teacher-command {
+    @apply relative overflow-hidden rounded-xl2 border border-ink-900 bg-ink-900 p-5 text-white shadow-lift sm:p-6;
+    background-image: radial-gradient(circle at 94% 5%, rgba(200, 121, 46, 0.58), transparent 30%), linear-gradient(135deg, #171717 0%, #111111 100%);
+  }
+  .teacher-command::after {
+    content: '';
+    position: absolute;
+    width: 19rem;
+    height: 19rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 9999px;
+    left: -10rem;
+    bottom: -14rem;
+  }
+  .teacher-command-mark {
+    @apply flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-sage-100;
+  }
+  .teacher-stat {
+    @apply rounded-xl border border-white/10 bg-white/10 p-3 backdrop-blur-sm;
+  }
+  .teacher-stat-value {
+    @apply block font-display text-2xl font-semibold text-white;
+  }
+  .teacher-stat-label {
+    @apply mt-0.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-white/55;
+  }
+  .teacher-queue-empty {
+    @apply flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-3 text-sm text-white/75;
+  }
+  .teacher-queue-item {
+    @apply flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white px-3 py-3 text-left text-ink-800 shadow-soft transition hover:-translate-y-0.5 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-sage-300;
+  }
+  .teacher-queue-icon {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sage-100 text-sage-700;
+  }
 }
