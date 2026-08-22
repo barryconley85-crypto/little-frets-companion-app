@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Gauge, Music2, Pause, Play, Plus, RotateCcw, Sparkles, Volume2, X } from 'lucide-react';
+import FollowMeLiveRoom from './FollowMeLiveRoom';
 
 const CHORD_OPTIONS = ['C', 'A', 'G', 'E', 'D', 'F', 'Am', 'Em', 'Dm', 'E7', 'A7', 'D7', 'G7', 'C7', 'B7', 'Am7', 'Em7', 'Dm7', 'Bm7', 'Cmaj7', 'Gmaj7', 'Fmaj7', 'Dmaj7', 'Amaj7'];
 const LADDER_TEMPOS = [50, 60, 70, 80];
@@ -133,6 +134,8 @@ export default function PracticeLab() {
           <div className="rounded-xl border border-sage-200 bg-sage-50/70 p-5 flex flex-col justify-between"><div><div className="flex items-center justify-between gap-3"><p className="text-xs uppercase tracking-[0.14em] font-semibold text-sage-700">Play this now</p><div className="flex gap-1.5" aria-label={`Beat ${beat + 1} of ${beatsPerChord}`}>{Array.from({ length: beatsPerChord }).map((_, index) => <span key={index} className={`h-2.5 w-2.5 rounded-full transition ${index === beat && playing ? 'bg-rose-500 scale-125' : 'bg-sage-200'}`} />)}</div></div><div className="mt-5 rounded-xl border border-sage-200 bg-white p-5 text-center"><p className="text-[11px] uppercase tracking-[0.12em] text-ink-400">Chord {activeChordIndex + 1} of {chords.length}</p><p className="mt-1 font-display text-5xl font-semibold text-ink-800">{currentChord}</p><p className="mt-3 text-sm text-ink-600">{playing ? <>Next: <span className="font-semibold text-sage-800">{nextChord}</span></> : 'Press start when your hands are ready.'}</p></div><div className="mt-4 flex flex-wrap justify-center gap-1.5">{chords.map((chord, index) => <span key={`${chord}-${index}`} className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${index === activeChordIndex && playing ? 'border-sage-300 bg-sage-100 text-sage-800' : 'border-sage-100 bg-white/70 text-ink-500'}`}>{index + 1}. {chord}</span>)}</div><p className="mt-4 text-center text-sm text-ink-600">{playing ? 'Keep the beat moving. A slower tempo gives every change time to arrive.' : 'Start slowly enough that each change feels calm.'}</p></div><button type="button" onClick={togglePlayback} className="btn-primary mt-5 w-full">{playing ? <><Pause className="w-5 h-5" /> Pause and reset</> : <><Play className="w-5 h-5" /> Start local click track</>}</button></div>
         </div>
       </section>
+
+      <FollowMeLiveRoom chords={chords} tempo={tempo} />
 
       <section className="card p-5 sm:p-6">
         <div className="flex items-start gap-3 mb-5"><div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0"><Gauge className="w-5 h-5" /></div><div><h2 className="font-display text-xl font-semibold text-ink-800">Tempo Ladder</h2><p className="mt-1 text-sm text-ink-500">A gentle set of optional resting places. You decide when a tempo feels ready; the app does not test or track you.</p></div></div>
