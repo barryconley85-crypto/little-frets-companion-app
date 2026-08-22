@@ -6,7 +6,7 @@ import { Student, Task, Recording } from '../lib/types';
 import {
   Users, Plus, Music4, Mail, UserCircle, Calendar, Video, FileMusic,
   X, Send, Loader2, Inbox, Clock, CheckCircle2, AlertCircle, Pencil,
-  MessageCircle, ArrowRight, Headphones,
+  MessageCircle, ArrowRight, Headphones, Target,
 } from 'lucide-react';
 
 type View = 'students' | 'requests' | 'history';
@@ -130,24 +130,43 @@ type NudgeQueueItem = {
   taskTitle: string;
 };
 
+type LearnerThread = {
+  student: Student;
+  taskTitle: string;
+};
+
 function CoachDesk({ teacherId, students, onOpenForReview }: { teacherId: string; students: Student[]; onOpenForReview: (student: Student) => void }) {
   const [queue, setQueue] = useState<NudgeQueueItem[]>([]);
+  const [threads, setThreads] = useState<LearnerThread[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const { data, error } = await supabase
-        .from('recordings')
-        .select('id, created_at, confidence, reflection, students!inner(id, name, email, group_name, teacher_id, user_id, created_at), tasks(title)')
-        .eq('students.teacher_id', teacherId)
-        .eq('review_status', 'needs_review')
-        .order('created_at', { ascending: false })
-        .limit(6);
-      if (error) console.error(error);
+      const [queueResponse, taskResponse, recordingResponse] = await Promise.all([
+        supabase
+          .from('recordings')
+          .select('id, created_at, confidence, reflection, students!inner(id, name, email, group_name, teacher_id, user_id, created_at), tasks(title)')
+          .eq('students.teacher_id', teacherId)
+          .eq('review_status', 'needs_review')
+          .order('created_at', { ascending: false })
+          .limit(6),
+        supabase
+          .from('tasks')
+          .select('id, student_id, title, created_at, students!inner(id, name, email, group_name, teacher_id, user_id, created_at)')
+          .eq('students.teacher_id', teacherId)
+          .order('created_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('recordings')
+          .select('student_id, students!inner(teacher_id)')
+          .eq('students.teacher_id', teacherId)
+          .limit(100),
+      ]);
+      if (queueResponse.error || taskResponse.error || recordingResponse.error) console.error(queueResponse.error || taskResponse.error || recordingResponse.error);
       if (!active) return;
 
-      const parsed = ((data || []) as Array<{
+      const parsedQueue = ((queueResponse.data || []) as Array<{
         id: string;
         created_at: string;
         confidence: number | null;
@@ -159,7 +178,15 @@ function CoachDesk({ teacherId, students, onOpenForReview }: { teacherId: string
         const task = Array.isArray(row.tasks) ? row.tasks[0] : row.tasks;
         return student ? { id: row.id, created_at: row.created_at, confidence: row.confidence, reflection: row.reflection, student: student as Student, taskTitle: task?.title || 'Practice take' } : null;
       }).filter((item): item is NudgeQueueItem => item !== null);
-      setQueue(parsed);
+
+      const latestTaskByStudent = new Map<string, LearnerThread>();
+      ((taskResponse.data || []) as Array<{ student_id: string; title: string; students: Student | Student[] | null }>).forEach((row) => {
+        const student = Array.isArray(row.students) ? row.students[0] : row.students;
+        if (student && !latestTaskByStudent.has(row.student_id)) latestTaskByStudent.set(row.student_id, { student: student as Student, taskTitle: row.title });
+      });
+      const studentsWithAnyTake = new Set(((recordingResponse.data || []) as Array<{ student_id: string }>).map((row) => row.student_id));
+      setQueue(parsedQueue);
+      setThreads(Array.from(latestTaskByStudent.entries()).filter(([studentId]) => !studentsWithAnyTake.has(studentId)).map(([, thread]) => thread));
       setLoading(false);
     })();
     return () => { active = false; };
@@ -205,6 +232,20 @@ function CoachDesk({ teacherId, students, onOpenForReview }: { teacherId: string
           </div>
         )}
       </div>
+      {threads.length > 0 && (
+        <div className="relative z-10 mt-4">
+          <div className="flex items-center justify-between gap-3 mb-2"><span className="text-xs font-bold uppercase tracking-[0.14em] text-white/55">Keep the loop moving</span><span className="text-xs text-white/55">A current mission, waiting for its first take.</span></div>
+          <div className="space-y-2">
+            {threads.map((thread) => (
+              <button key={thread.student.id} type="button" className="teacher-thread-item" onClick={() => onOpenForReview(thread.student)}>
+                <div className="teacher-queue-icon"><Target className="w-4 h-4" /></div>
+                <div className="min-w-0 flex-1 text-left"><span className="block font-semibold text-ink-900">{thread.student.name}</span><span className="block mt-0.5 text-xs text-ink-500 truncate">Current mission: {thread.taskTitle}</span></div>
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-sage-800">Open learner view <ArrowRight className="w-3.5 h-3.5" /></span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
