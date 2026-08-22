@@ -18,6 +18,8 @@ export interface Student {
   created_at: string;
 }
 
+export type GuitarMuscle = 'pulse' | 'chords' | 'fretboard' | 'tone' | 'musicality';
+
 export interface Task {
   id: string;
   teacher_id: string;
@@ -32,6 +34,7 @@ export interface Task {
   success_criteria: string | null;
   due_at: string | null;
   estimated_minutes: number | null;
+  skill_tags: GuitarMuscle[];
   created_at: string;
 }
 

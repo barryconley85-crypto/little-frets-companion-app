@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { uploadTaskMedia } from '../lib/storage';
-import { Student, Task } from '../lib/types';
+import { GuitarMuscle, Student, Task } from '../lib/types';
+import { GUITAR_MUSCLES, getMuscle, getTaskHealth, toggleMuscle } from '../lib/curriculum';
 import {
   AlertCircle, Calendar, CheckCircle2, FileMusic, Loader2, Mail,
   Music4, Pencil, Plus, Send, UserCircle, Users, Video, X,
@@ -15,6 +16,7 @@ export default function TeacherDashboard() {
 function StudentsView() {
   const { profile } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState<Student | null>(null);
@@ -22,13 +24,13 @@ function StudentsView() {
   const load = useCallback(async () => {
     if (!profile) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('students')
-      .select('*')
-      .eq('teacher_id', profile.id)
-      .order('created_at', { ascending: false });
-    if (error) console.error(error);
-    setStudents((data as Student[]) || []);
+    const [{ data: studentRows, error: studentError }, { data: taskRows, error: taskError }] = await Promise.all([
+      supabase.from('students').select('*').eq('teacher_id', profile.id).order('created_at', { ascending: false }),
+      supabase.from('tasks').select('*').eq('teacher_id', profile.id).order('created_at', { ascending: false }).limit(100),
+    ]);
+    if (studentError || taskError) console.error(studentError || taskError);
+    setStudents((studentRows as Student[]) || []);
+    setTasks((taskRows as Task[]) || []);
     setLoading(false);
   }, [profile]);
 
@@ -57,6 +59,8 @@ function StudentsView() {
           <div className="teacher-stat"><span className="teacher-stat-value">{students.filter((student) => Boolean(student.user_id)).length}</span><span className="teacher-stat-label">connected learners</span></div>
         </div>
       </section>
+
+      {!loading && <PracticeDesignDashboard students={students} tasks={tasks} />}
 
       {loading ? (
         <div className="card p-8 text-center text-ink-400 flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>
@@ -88,9 +92,75 @@ function StudentsView() {
       )}
 
       {showAdd && <AddStudentModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
-      {selected && <StudentDetailModal student={selected} onClose={() => setSelected(null)} onTaskCreated={() => setSelected(null)} />}
+      {selected && <StudentDetailModal student={selected} onClose={() => setSelected(null)} onTaskCreated={() => { setSelected(null); load(); }} />}
     </div>
   );
+}
+
+type PlanRow = { student: Student; task: Task | null; health: ReturnType<typeof getTaskHealth> | null };
+
+function PracticeDesignDashboard({ students, tasks }: { students: Student[]; tasks: Task[] }) {
+  const planRows: PlanRow[] = students.map((student) => {
+    const task = tasks.find((item) => item.student_id === student.id || (student.group_name !== null && item.group_name === student.group_name)) || null;
+    return { student, task, health: task ? getTaskHealth(task) : null };
+  });
+  const plannedRows = planRows.filter((row) => row.task && row.health);
+  const readyPlans = plannedRows.filter((row) => row.health?.ready).length;
+  const muscleCounts = GUITAR_MUSCLES.map((muscle) => ({
+    ...muscle,
+    count: tasks.filter((task) => task.skill_tags.includes(muscle.id)).length,
+  }));
+  const planTotal = plannedRows.reduce((total, row) => total + (row.health?.score || 0), 0);
+  const planPossible = plannedRows.reduce((total, row) => total + (row.health?.total || 0), 0);
+  const healthPercent = planPossible ? Math.round((planTotal / planPossible) * 100) : 0;
+
+  return (
+    <section className="card p-5 sm:p-6 space-y-5">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="growth-eyebrow text-sage-700">Teacher-only planning insight</p>
+          <h2 className="font-display text-2xl font-semibold text-ink-800">Practice Design Dashboard</h2>
+          <p className="mt-1 text-sm text-ink-500 max-w-2xl">This looks only at the missions, materials, and check-ins you create. It never reads private learner recordings or activity.</p>
+        </div>
+        <div className="rounded-xl bg-sage-50 border border-sage-100 px-4 py-3 text-right">
+          <div className="text-2xl font-display font-semibold text-sage-800">{healthPercent}%</div>
+          <div className="text-xs text-sage-700 font-medium">studio plan health</div>
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-3 gap-3">
+        <DesignStat value={`${readyPlans}/${plannedRows.length || 0}`} label="plans fully prepared" />
+        <DesignStat value={String(tasks.filter((task) => Boolean(task.due_at)).length)} label="live check-ins planned" />
+        <DesignStat value={String(tasks.filter((task) => task.video_url || task.audio_url || task.tab_url).length)} label="tasks with materials" />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        <div className="rounded-xl bg-sand-50 border border-sand-100 p-4">
+          <div className="flex items-center justify-between gap-3 mb-3"><div><h3 className="font-semibold text-ink-800">Mission health</h3><p className="text-xs text-ink-500 mt-0.5">A clear plan is more useful than a child activity score.</p></div><span className="text-xs font-semibold text-sage-700">Teacher-authored</span></div>
+          {planRows.length === 0 ? <p className="text-sm text-ink-400">Add a learner and set a mission to begin designing their path.</p> : <ul className="space-y-2">{planRows.map((row) => <MissionHealthRow key={row.student.id} row={row} />)}</ul>}
+        </div>
+        <div className="rounded-xl border border-ink-100 bg-white p-4">
+          <div className="mb-3"><h3 className="font-semibold text-ink-800">Five Guitar Muscles</h3><p className="text-xs text-ink-500 mt-0.5">A curriculum map of your assignments—not a score for any learner.</p></div>
+          <div className="space-y-2.5">{muscleCounts.map((muscle) => <MuscleCoverageRow key={muscle.id} label={muscle.label} description={muscle.description} count={muscle.count} accent={muscle.accent} max={Math.max(...muscleCounts.map((item) => item.count), 1)} />)}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DesignStat({ value, label }: { value: string; label: string }) {
+  return <div className="rounded-xl border border-ink-100 bg-white p-3"><div className="font-display text-xl font-semibold text-ink-800">{value}</div><div className="mt-0.5 text-xs text-ink-500">{label}</div></div>;
+}
+
+function MissionHealthRow({ row }: { row: PlanRow }) {
+  if (!row.task || !row.health) return <li className="rounded-lg bg-white border border-ink-100 px-3 py-2.5"><div className="font-semibold text-sm text-ink-800">{row.student.name}</div><p className="mt-0.5 text-xs text-amber-700">No current mission — set a task to begin their learning path.</p></li>;
+  const nextMissing = row.health.missing.slice(0, 2).map((item) => item.label).join(' and ');
+  return <li className="rounded-lg bg-white border border-ink-100 px-3 py-2.5"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="font-semibold text-sm text-ink-800 truncate">{row.student.name}</div><div className="text-xs text-ink-500 truncate">{row.task.title}</div></div><span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${row.health.ready ? 'bg-sage-100 text-sage-700' : 'bg-amber-100 text-amber-700'}`}>{row.health.score}/{row.health.total} ready</span></div><div className="mt-2 flex items-center gap-1.5 flex-wrap">{row.task.skill_tags.map((tag) => { const muscle = getMuscle(tag); return muscle ? <span key={tag} className={`text-[11px] px-1.5 py-0.5 rounded border ${muscle.accent}`}>{muscle.label}</span> : null; })}</div>{!row.health.ready && <p className="mt-2 text-xs text-ink-500">Next improvement: add {nextMissing}.</p>}</li>;
+}
+
+function MuscleCoverageRow({ label, description, count, accent, max }: { label: string; description: string; count: number; accent: string; max: number }) {
+  const width = `${Math.round((count / max) * 100)}%`;
+  return <div><div className="flex items-center justify-between gap-3 text-xs mb-1"><span className="font-semibold text-ink-700">{label}</span><span className="text-ink-400">{count} tagged task{count === 1 ? '' : 's'}</span></div><div className="h-2.5 rounded-full bg-ink-100 overflow-hidden"><div className={`h-full rounded-full ${accent.split(' ')[0]}`} style={{ width }} /></div><p className="mt-1 text-[11px] text-ink-400">{description}</p></div>;
 }
 
 function AddStudentModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
@@ -171,7 +241,7 @@ function StudentOverview({ student, onSetTask, onEditTask }: { student: Student;
           <ul className="space-y-2">{tasks.slice(0, 5).map((task) => (
             <li key={task.id} className="card p-3 flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-sage-100 text-sage-700 flex items-center justify-center shrink-0"><Music4 className="w-4 h-4" /></div>
-              <div className="min-w-0 flex-1"><div className="font-medium text-ink-800 text-sm truncate">{task.title}</div><div className="text-xs text-ink-400 flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(task.created_at).toLocaleDateString()}</div></div>
+              <div className="min-w-0 flex-1"><div className="font-medium text-ink-800 text-sm truncate">{task.title}</div><div className="text-xs text-ink-400 flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(task.created_at).toLocaleDateString()}</div>{task.skill_tags.length > 0 && <div className="mt-1 flex gap-1 flex-wrap">{task.skill_tags.map((tag) => { const muscle = getMuscle(tag); return muscle ? <span key={tag} className={`text-[10px] px-1.5 py-0.5 rounded border ${muscle.accent}`}>{muscle.label}</span> : null; })}</div>}</div>
               <button type="button" className="btn-ghost p-2 shrink-0" aria-label="Edit task" onClick={() => onEditTask(task)}><Pencil className="w-4 h-4" /></button>
             </li>
           ))}</ul>
@@ -190,6 +260,7 @@ function SetTaskForm({ student, existingTask, onDone }: { student: Student; exis
   const [successCriteria, setSuccessCriteria] = useState(existingTask?.success_criteria || '');
   const [dueAt, setDueAt] = useState(existingTask?.due_at ? new Date(existingTask.due_at).toISOString().slice(0, 16) : '');
   const [estimatedMinutes, setEstimatedMinutes] = useState(existingTask?.estimated_minutes?.toString() || '');
+  const [skillTags, setSkillTags] = useState<GuitarMuscle[]>(existingTask?.skill_tags || []);
   const [video, setVideo] = useState<File | null>(null);
   const [audio, setAudio] = useState<File | null>(null);
   const [tab, setTab] = useState<File | null>(null);
@@ -204,7 +275,7 @@ function SetTaskForm({ student, existingTask, onDone }: { student: Student; exis
     const values = {
       title: title.trim(), notes: notes.trim() || null, mission: mission.trim() || null,
       success_criteria: successCriteria.trim() || null, due_at: dueAt ? new Date(dueAt).toISOString() : null,
-      estimated_minutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+      estimated_minutes: estimatedMinutes ? Number(estimatedMinutes) : null, skill_tags: skillTags,
     };
     let task: Task | null = null;
     if (existingTask) {
@@ -239,6 +310,7 @@ function SetTaskForm({ student, existingTask, onDone }: { student: Student; exis
       <div><label className="label" htmlFor="tnotes">Notes</label><textarea id="tnotes" className="input min-h-[90px] resize-y" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="What to focus on this week…" /></div>
       <div><label className="label" htmlFor="tmission">Today’s mission</label><input id="tmission" className="input" value={mission} onChange={(event) => setMission(event.target.value)} placeholder="e.g. Keep the riff steady at a slow tempo" /></div>
       <div><label className="label" htmlFor="tcriteria">You’re done when…</label><input id="tcriteria" className="input" value={successCriteria} onChange={(event) => setSuccessCriteria(event.target.value)} placeholder="e.g. You can play it through twice without stopping" /></div>
+      <div><span className="label">Guitar muscles <span className="font-normal text-ink-400">(choose up to two)</span></span><div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{GUITAR_MUSCLES.map((muscle) => { const selected = skillTags.includes(muscle.id); return <button key={muscle.id} type="button" aria-pressed={selected} onClick={() => setSkillTags((current) => toggleMuscle(current, muscle.id))} className={`rounded-lg border px-3 py-2 text-left text-xs transition ${selected ? muscle.accent : 'border-ink-200 bg-white text-ink-600 hover:border-sage-300'}`}><span className="block font-semibold">{muscle.label}</span><span className="block mt-0.5 text-[10px] opacity-75">{muscle.description}</span></button>; })}</div></div>
       <div className="grid sm:grid-cols-2 gap-3"><div><label className="label" htmlFor="tdue">Next check-in (optional)</label><input id="tdue" type="datetime-local" className="input" value={dueAt} onChange={(event) => setDueAt(event.target.value)} /></div><div><label className="label" htmlFor="tminutes">Focused minutes (optional)</label><input id="tminutes" type="number" min="1" max="240" className="input" value={estimatedMinutes} onChange={(event) => setEstimatedMinutes(event.target.value)} placeholder="e.g. 10" /></div></div>
       <div className="grid sm:grid-cols-2 gap-3"><FileInput label="Video of you playing (optional)" accept="video/*" icon={<Video className="w-4 h-4" />} file={video} onChange={setVideo} existingName={existingTask?.video_url?.split('/').pop()} /><FileInput label="Audio (optional)" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" icon={<FileMusic className="w-4 h-4" />} file={audio} onChange={setAudio} existingName={existingTask?.audio_url?.split('/').pop()} /><FileInput label="Tab / notation (PDF or image)" accept="application/pdf,image/*" icon={<FileMusic className="w-4 h-4" />} file={tab} onChange={setTab} existingName={existingTask?.tab_url?.split('/').pop()} /></div>
       {error && <ErrorBox>{error}</ErrorBox>}
