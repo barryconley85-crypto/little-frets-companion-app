@@ -23,9 +23,9 @@ export default function App() {
 
   if (profile.role === 'teacher') {
     const nav = [
-      { id: 'students', label: 'Students', icon: <UsersIcon /> },
+      { id: 'students', label: 'Studio', icon: <UsersIcon /> },
       { id: 'requests', label: 'Requests', icon: <InboxIcon /> },
-      { id: 'history', label: 'History', icon: <ClockIcon /> },
+      { id: 'history', label: 'Learner growth', icon: <ClockIcon /> },
     ];
     const active = nav.some((n) => n.id === view) ? view : 'students';
     return (
@@ -36,8 +36,8 @@ export default function App() {
   }
 
   const nav = [
-    { id: 'task', label: 'This Week', icon: <HomeIcon /> },
-    { id: 'library', label: 'Library', icon: <LibraryIcon /> },
+    { id: 'task', label: 'Next move', icon: <HomeIcon /> },
+    { id: 'library', label: 'Passport', icon: <LibraryIcon /> },
     { id: 'request', label: 'Request', icon: <SendIcon /> },
   ];
   const active = nav.some((n) => n.id === view) ? view : 'task';

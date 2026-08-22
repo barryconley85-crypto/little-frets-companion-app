@@ -61,6 +61,7 @@ function TaskView({ onNavigate }: { onNavigate: (v: string) => void }) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [tabUrl, setTabUrl] = useState<string | null>(null);
+  const [latestRecording, setLatestRecording] = useState<Recording | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const loadTask = useCallback(async (silent = false) => {
@@ -83,8 +84,16 @@ function TaskView({ onNavigate }: { onNavigate: (v: string) => void }) {
         t.audio_url ? resolveMediaUrl('task-media', t.audio_url) : Promise.resolve(null),
         t.tab_url ? resolveMediaUrl('task-media', t.tab_url) : Promise.resolve(null),
       ]);
+      const { data: takeRows } = await supabase
+        .from('recordings')
+        .select('*')
+        .eq('task_id', t.id)
+        .eq('student_id', student.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
       setVideoUrl(v); setAudioUrl(a); setTabUrl(tab);
-    } else { setVideoUrl(null); setAudioUrl(null); setTabUrl(null); }
+      setLatestRecording(((takeRows as Recording[]) || [])[0] || null);
+    } else { setVideoUrl(null); setAudioUrl(null); setTabUrl(null); setLatestRecording(null); }
   }, [profile, student]);
 
   useEffect(() => { loadTask(refreshKey > 0); }, [loadTask, refreshKey]);
@@ -102,14 +111,58 @@ function TaskView({ onNavigate }: { onNavigate: (v: string) => void }) {
     </div>
   );
 
+  const hasTeacherNudge = Boolean(latestRecording?.teacher_feedback);
+  const takeStatus = hasTeacherNudge
+    ? 'Your teacher has left your next move.'
+    : latestRecording
+      ? 'Your take is with your teacher.'
+      : 'Save a short take to invite a teacher nudge.';
+
   return (
     <div className="space-y-6">
-      <Header title="This week" subtitle="Here's what to practise." />
+      <section className="growth-hero">
+        <div className="relative z-10 p-6 sm:p-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="growth-eyebrow">Little Frets growth loop</p>
+              <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight">Your next musical move</h1>
+              <p className="mt-2 max-w-xl text-white/75 text-sm sm:text-base">Small, focused practice. A real take. A kind human response.</p>
+            </div>
+            <div className="growth-hero-mark" aria-hidden="true"><Music4 className="w-7 h-7" /></div>
+          </div>
+          <div className="mt-6 rounded-xl bg-white/10 border border-white/15 px-4 py-3 flex items-start gap-3">
+            <Sparkles className="w-5 h-5 mt-0.5 text-sage-200 shrink-0" />
+            <div><span className="block text-xs uppercase tracking-[0.16em] text-white/55 font-semibold">Where you are now</span><span className="text-sm font-semibold">{takeStatus}</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-end justify-between gap-4 mb-3">
+          <Header title={task.title} subtitle="One calm loop at a time." />
+          {task.estimated_minutes && <span className="growth-focus-chip"><Clock className="w-3.5 h-3.5" /> {task.estimated_minutes} min</span>}
+        </div>
+        <div className="growth-path">
+          <div className="growth-step growth-step-active">
+            <div className="growth-step-number">1</div>
+            <div><span className="growth-step-label">Focus</span><p>{task.mission || 'Listen for one small thing you want to improve.'}</p></div>
+          </div>
+          <div className={`growth-step ${latestRecording ? 'growth-step-active' : ''}`}>
+            <div className="growth-step-number">2</div>
+            <div><span className="growth-step-label">Make a take</span><p>{latestRecording ? 'A take is saved in your passport.' : 'Record a short, honest snapshot.'}</p></div>
+          </div>
+          <div className={`growth-step ${hasTeacherNudge ? 'growth-step-active' : ''}`}>
+            <div className="growth-step-number">3</div>
+            <div><span className="growth-step-label">Receive a nudge</span><p>{hasTeacherNudge ? latestRecording?.teacher_next_action || 'Your teacher has replied.' : 'Your teacher will point to the next musical move.'}</p></div>
+          </div>
+        </div>
+      </section>
+
       <div className="card p-5 sm:p-6">
         <div className="flex items-start gap-3 mb-3">
           <div className="w-11 h-11 rounded-xl bg-sage-100 text-sage-700 flex items-center justify-center shrink-0"><Music4 className="w-6 h-6" /></div>
           <div className="min-w-0">
-            <h2 className="font-display text-xl font-semibold text-ink-800">{task.title}</h2>
+            <h2 className="font-display text-xl font-semibold text-ink-800">Today’s practice</h2>
             <div className="text-xs text-ink-400 flex items-center gap-1 mt-0.5"><Calendar className="w-3 h-3" /> {new Date(task.created_at).toLocaleDateString()}</div>
           </div>
         </div>
@@ -206,8 +259,8 @@ function PracticeRecorder({ student, task, onSaved, onGoLibrary }: { student: St
 
   return (
     <div className="card p-5 sm:p-6">
-      <div className="flex items-center gap-2 mb-1"><Mic className="w-5 h-5 text-sage-700" /><h3 className="font-display text-lg font-semibold text-ink-800">Record your practice</h3></div>
-      <p className="text-ink-500 text-sm mb-4">Play the task, then tap stop when you're done. You'll get a little feedback too.</p>
+      <div className="flex items-center gap-2 mb-1"><Mic className="w-5 h-5 text-sage-700" /><h3 className="font-display text-lg font-semibold text-ink-800">Make your take</h3></div>
+      <p className="text-ink-500 text-sm mb-4">This is a snapshot, not a performance. Save a short take, reflect, and give your teacher something real to respond to.</p>
 
       {saved && (<div className="rounded-xl bg-sage-50 border border-sage-200 text-sage-800 text-sm px-4 py-3 mb-4 flex items-start gap-2"><Sparkles className="w-4 h-4 mt-0.5 shrink-0" /><span>Nice work! Your take is saved. Your teacher can now see your reflection and send you a next-step nudge.</span></div>)}
       {error && (<div className="rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3 mb-4 flex items-start gap-2"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /> <span>{error}</span></div>)}
@@ -304,16 +357,27 @@ function LibraryView({ onNavigate }: { onNavigate: (v: string) => void }) {
   if (loading || busy) return <div className="card p-8 text-center text-ink-400 flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>;
   if (!student) return <NotLinked />;
 
+  const allRecordings = Object.values(recordings).reduce<Recording[]>((all, taskRecordings) => all.concat(taskRecordings), []);
+  const teacherNudges = allRecordings.filter((recording) => Boolean(recording.teacher_feedback)).length;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <Header title="Library" subtitle="Your practice diary — every task and recording." />
-        {streak > 0 && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-sand-100 text-sand-800 text-sm font-semibold">
-            <Sparkles className="w-4 h-4" /> {streak}-day streak
+      <section className="passport-board">
+        <div className="relative z-10 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <p className="growth-eyebrow">Your private record of becoming</p>
+            <h1 className="font-display text-3xl font-semibold tracking-tight">Guitar Growth Passport</h1>
+            <p className="mt-2 max-w-xl text-sm text-white/70">Every honest take and teacher nudge becomes evidence that your playing is moving forward.</p>
           </div>
-        )}
-      </div>
+          <Sparkles className="w-7 h-7 text-sage-200 mt-1" aria-hidden="true" />
+        </div>
+        <div className="relative z-10 mt-5 grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="passport-stat"><span className="passport-stat-value">{streak || '—'}</span><span className="passport-stat-label">day streak</span></div>
+          <div className="passport-stat"><span className="passport-stat-value">{allRecordings.length}</span><span className="passport-stat-label">takes saved</span></div>
+          <div className="passport-stat"><span className="passport-stat-value">{teacherNudges}</span><span className="passport-stat-label">teacher nudges</span></div>
+        </div>
+      </section>
+      <Header title="Your practice library" subtitle="Return to the moments that shaped your next move." />
       {tasks.length === 0 ? (
         <div className="card p-10 text-center">
           <div className="w-14 h-14 rounded-2xl bg-sand-100 text-sand-700 flex items-center justify-center mx-auto mb-4"><Clock className="w-7 h-7" /></div>

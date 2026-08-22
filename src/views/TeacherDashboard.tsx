@@ -45,8 +45,8 @@ function StudentsView({ onNavigate }: { onNavigate: (v: string) => void }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-ink-800">Your students</h1>
-          <p className="text-ink-500 text-sm mt-0.5">Manage your roster and set weekly tasks.</p>
+          <h1 className="font-display text-2xl font-semibold text-ink-800">Your teaching studio</h1>
+          <p className="text-ink-500 text-sm mt-0.5">Give each learner one clear musical mission and a reason to return.</p>
         </div>
         <button className="btn-primary" onClick={() => setShowAdd(true)}>
           <Plus className="w-5 h-5" /> Add student
@@ -508,8 +508,8 @@ function HistoryView() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-semibold text-ink-800">Student history</h1>
-        <p className="text-ink-500 text-sm mt-0.5">Pick a student to see their tasks and practice recordings.</p>
+        <h1 className="font-display text-2xl font-semibold text-ink-800">Learner growth</h1>
+        <p className="text-ink-500 text-sm mt-0.5">Listen for progress, then leave one specific next musical move.</p>
       </div>
       {students.length === 0 ? (
         <EmptyState icon={<Clock className="w-8 h-8" />} title="No students yet" body="Add students from the Students tab to see their history here." />
@@ -595,7 +595,7 @@ function StudentHistory({ student, onBack }: { student: Student; onBack: () => v
                   </button>
                 </div>
                 <div className="mt-4 pt-4 border-t border-ink-100">
-                  <div className="text-sm font-semibold text-ink-700 mb-2">Practice takes</div>
+                  <div className="text-sm font-semibold text-ink-700 mb-2">Practice takes and teacher nudges</div>
                   {taskRecordings.length === 0 ? (
                     <p className="text-sm text-ink-400">No take yet. The learner will see this assignment in their practice view.</p>
                   ) : (

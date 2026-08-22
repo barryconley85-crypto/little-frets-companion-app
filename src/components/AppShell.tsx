@@ -18,7 +18,7 @@ export default function AppShell({ active, onNavigate, nav, children }: ShellPro
             <img src="https://i.postimg.cc/8CdzFx2V/little-frets-logo.jpg" alt="Little Frets" className="w-9 h-9 rounded-xl object-cover" />
             <div className="leading-tight">
               <div className="font-display font-semibold text-ink-800">Little Frets</div>
-              <div className="text-[11px] text-ink-400 -mt-0.5">{profile?.role === 'teacher' ? 'Teacher' : 'Student'}</div>
+              <div className="text-[11px] text-ink-400 -mt-0.5">{profile?.role === 'teacher' ? 'Teaching studio' : 'Your growth loop'}</div>
             </div>
           </div>
           <div className="flex items-center gap-3">
