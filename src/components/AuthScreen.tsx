@@ -54,12 +54,12 @@ export default function AuthScreen() {
             Practice together,<br />progress with joy.
           </h1>
           <p className="text-sand-100/90 text-lg leading-relaxed mb-8">
-            A calm, friendly companion for guitar lessons — weekly tasks, practice
-            recordings, and gentle feedback, all in one place.
+            A calm, friendly companion for guitar lessons — weekly tasks and private
+            practice recordings, all in one place.
           </p>
           <div className="space-y-3 text-sand-100/80">
             <Feature icon={<Sparkles className="w-5 h-5" />} text="Weekly tasks with video from your teacher" />
-            <Feature icon={<Music4 className="w-5 h-5" />} text="Record practice and get simple, kind feedback" />
+            <Feature icon={<Music4 className="w-5 h-5" />} text="Record practice and listen back privately" />
             <Feature icon={<GraduationCap className="w-5 h-5" />} text="Keep a growing library of your progress" />
           </div>
         </div>
@@ -132,7 +132,7 @@ export default function AuthScreen() {
                     onClick={() => setRole('teacher')}
                     icon={<GraduationCap className="w-5 h-5" />}
                     title="Teacher"
-                    desc="Assign tasks & review work"
+                    desc="Set tasks & share materials"
                   />
                   <RoleCard
                     active={role === 'student'}

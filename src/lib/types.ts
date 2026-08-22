@@ -41,20 +41,5 @@ export interface Recording {
   student_id: string;
   audio_url: string;
   feedback_summary: string | null;
-  reflection: string | null;
-  confidence: number | null;
-  review_status: 'needs_review' | 'retry' | 'ready' | 'discuss_live';
-  teacher_feedback: string | null;
-  teacher_next_action: string | null;
-  reviewed_at: string | null;
-  created_at: string;
-}
-
-export interface SongRequest {
-  id: string;
-  student_id: string;
-  song_name: string;
-  note: string | null;
-  status: 'pending' | 'reviewed';
   created_at: string;
 }
