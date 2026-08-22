@@ -69,7 +69,7 @@ export default function AppShell({ active, onNavigate, nav, children }: ShellPro
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`flex flex-col items-center gap-1 px-4 py-2.5 text-xs font-medium transition ${
+              className={`flex flex-col items-center gap-1 px-2 sm:px-3 py-2.5 text-[11px] sm:text-xs font-medium transition ${
                 active === item.id ? 'text-sage-700' : 'text-ink-400'
               }`}
             >
