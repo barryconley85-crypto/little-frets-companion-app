@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Headphones, Loader2, Mic, Music2, Pause, Play, SkipForward, Sparkles } from 'lucide-react';
+import { LiveRoomSampleBank, loadLiveRoomSampleBank, playElectricBass, playPianoVoicing } from '../lib/liveRoomSamples';
 
 const ROOT_FREQUENCIES: Record<string, number> = {
   C: 65.41, D: 73.42, E: 82.41, F: 87.31, G: 98, A: 110, B: 123.47,
@@ -67,49 +68,59 @@ function playHat(context: AudioContext, output: AudioNode, volume = 0.035) {
   playNoise(context, output, volume, 0.045, 5000);
 }
 
-function playBandBeat(context: AudioContext, output: AudioNode, chord: string, beat: number, style: LiveStyle, accented = false) {
+function playBandBeat(context: AudioContext, output: AudioNode, chord: string, beat: number, style: LiveStyle, sampleBank: LiveRoomSampleBank | null, accented = false) {
   const root = ROOT_FREQUENCIES[chordRoot(chord)] || 98;
   const onBackbeat = beat === 1 || beat === 3;
-  const bass = (frequency: number, volume: number, duration: number, wave: OscillatorType = 'triangle') => {
-    playTone(context, output, frequency, volume, duration, wave);
-    playTone(context, output, frequency * 2, volume * 0.22, duration * 0.72, 'sine');
+  const bass = (frequency: number, volume: number, duration: number, wave: OscillatorType = 'triangle', useFifth = false) => {
+    const sampled = playElectricBass(context, output, sampleBank, chord, volume * 0.9, duration, useFifth);
+    if (!sampled) {
+      playTone(context, output, frequency, volume, duration, wave);
+      playTone(context, output, frequency * 2, volume * 0.22, duration * 0.72, 'sine');
+    }
   };
+  const piano = (volume: number, duration: number) => playPianoVoicing(context, output, sampleBank, chord, volume, duration);
 
   if (style.id === 'campfire') {
-    if (beat === 0 || beat === 2 || accented) bass(root, 0.21, 0.28, 'triangle');
+    if (beat === 0 || beat === 2 || accented) bass(root, 0.21, 0.58, 'triangle');
+    if (beat === 0 || beat === 2) piano(0.13, 0.82);
     if (beat === 0) playKick(context, output, 0.07);
     if (onBackbeat) playHat(context, output, 0.018);
     return;
   }
   if (style.id === 'indie') {
-    bass(root, beat === 0 || accented ? 0.23 : 0.14, 0.22, 'triangle');
+    bass(root, beat === 0 || accented ? 0.23 : 0.14, 0.42, 'triangle');
+    if (beat === 0 || beat === 2) piano(0.12, 0.52);
     if (beat === 0 || beat === 2) playKick(context, output, 0.14);
     if (onBackbeat) playSnare(context, output, 0.075);
     playHat(context, output, 0.028);
     return;
   }
   if (style.id === 'pop') {
-    bass(root, 0.18, 0.2, 'sine');
+    bass(root, 0.18, 0.36, 'sine');
+    if (beat === 0 || beat === 2) piano(0.15, 0.48);
     playKick(context, output, 0.17);
     if (onBackbeat) playSnare(context, output, 0.105);
     playHat(context, output, 0.042);
     return;
   }
   if (style.id === 'blues') {
-    bass(beat === 1 || beat === 3 ? root * 1.5 : root, beat === 0 || accented ? 0.24 : 0.15, 0.26, 'triangle');
+    bass(beat === 1 || beat === 3 ? root * 1.5 : root, beat === 0 || accented ? 0.24 : 0.15, 0.48, 'triangle', beat === 1 || beat === 3);
+    if (beat === 0 || beat === 2) piano(0.1, 0.58);
     if (beat === 0 || beat === 2) playKick(context, output, 0.11);
     if (onBackbeat) playSnare(context, output, 0.06);
     playHat(context, output, 0.02);
     return;
   }
   if (style.id === 'soul') {
-    bass(beat === 2 ? root * 2 : root, beat === 0 || accented ? 0.21 : 0.13, 0.24, 'sine');
+    bass(beat === 2 ? root * 2 : root, beat === 0 || accented ? 0.21 : 0.13, 0.56, 'sine');
+    if (beat === 0 || beat === 2) piano(0.16, 0.76);
     if (beat === 0) playKick(context, output, 0.1);
     if (onBackbeat) playSnare(context, output, 0.05);
     playHat(context, output, 0.023);
     return;
   }
-  bass(root, beat === 0 || accented ? 0.27 : 0.18, 0.23, 'sawtooth');
+  bass(root, beat === 0 || accented ? 0.27 : 0.18, 0.38, 'sawtooth');
+  if (beat === 0 || beat === 2) piano(0.1, 0.44);
   if (beat === 0 || beat === 2) playKick(context, output, 0.2);
   if (onBackbeat) playSnare(context, output, 0.12);
   playHat(context, output, 0.045);
@@ -118,8 +129,9 @@ function playBandBeat(context: AudioContext, output: AudioNode, chord: string, b
 export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; tempo: number }) {
   const [roomState, setRoomState] = useState<RoomState>('idle');
   const [styleId, setStyleId] = useState<StyleId>('indie');
-  const [backingVolume, setBackingVolume] = useState(85);
+  const [backingVolume, setBackingVolume] = useState(100);
   const [responseMode, setResponseMode] = useState<'responsive' | 'balanced' | 'calm'>('responsive');
+  const [loadingSamples, setLoadingSamples] = useState(false);
   const [starting, setStarting] = useState(false);
   const [activeChordIndex, setActiveChordIndex] = useState(0);
   const [signalLevel, setSignalLevel] = useState(0);
@@ -130,6 +142,8 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
   const streamRef = useRef<MediaStream | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
+  const sampleBankRef = useRef<LiveRoomSampleBank | null>(null);
+  const sampleLoadRef = useRef<Promise<LiveRoomSampleBank> | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
   const countTimerRef = useRef<number | null>(null);
@@ -148,6 +162,14 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
   const selectedStyle = LIVE_STYLES.find((style) => style.id === styleId) || LIVE_STYLES[0];
   const currentChord = chords[activeChordIndex];
   const nextChord = chords[(activeChordIndex + 1) % chords.length];
+
+  const ensureSampleBank = async (context: AudioContext) => {
+    if (sampleBankRef.current) return sampleBankRef.current;
+    if (!sampleLoadRef.current) sampleLoadRef.current = loadLiveRoomSampleBank(context);
+    const bank = await sampleLoadRef.current;
+    sampleBankRef.current = bank;
+    return bank;
+  };
 
   const clearTimers = () => {
     if (countTimerRef.current !== null) window.clearTimeout(countTimerRef.current);
@@ -182,7 +204,7 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
     activeChordRef.current = nextIndex;
     setActiveChordIndex(nextIndex);
     const next = route[nextIndex];
-    if (contextRef.current && masterGainRef.current) playBandBeat(contextRef.current, masterGainRef.current, next, 0, selectedStyle, true);
+    if (contextRef.current && masterGainRef.current) playBandBeat(contextRef.current, masterGainRef.current, next, 0, selectedStyle, sampleBankRef.current, true);
     setLastMove(source === 'signal' ? `Your change was heard — the band moved to ${next}.` : `The band has moved to ${next}.`);
   };
 
@@ -226,7 +248,7 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
     setLastMove(`The band is on ${chordsRef.current[0]}. Play a clear change when you are ready to move on.`);
     const bandTick = () => {
       const currentBeat = bandBeatRef.current;
-      playBandBeat(context, master, chordsRef.current[activeChordRef.current], currentBeat, selectedStyle);
+      playBandBeat(context, master, chordsRef.current[activeChordRef.current], currentBeat, selectedStyle, sampleBankRef.current);
       setBandBeat(currentBeat);
       bandBeatRef.current = (currentBeat + 1) % 4;
     };
@@ -281,6 +303,14 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
       contextRef.current = context;
       masterGainRef.current = master;
       analyserRef.current = analyser;
+      setLoadingSamples(true);
+      try {
+        await ensureSampleBank(context);
+      } catch {
+        setLastMove('The room started without instrument samples this time, so it is using the local fallback backing.');
+      } finally {
+        setLoadingSamples(false);
+      }
       baselineRef.current = 0.005;
       cooldownRef.current = 0;
       startedAtRef.current = 0;
@@ -293,6 +323,7 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
       setError(captureError instanceof Error ? captureError.message : 'Microphone access could not start. Check your browser permissions and try again.');
       stopLiveRoom();
     } finally {
+      setLoadingSamples(false);
       setStarting(false);
     }
   };
@@ -328,7 +359,7 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
 
         <div className="mt-5 rounded-xl border border-white/15 bg-white/10 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.14em] text-white/55 font-semibold">Choose your play-along style</p><p className="mt-1 text-sm text-white/75">Every style follows your chord route; choose the one that makes you want to keep playing.</p></div><span className="text-xs text-white/55">Stop the room to switch styles</span></div><div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">{LIVE_STYLES.map((style) => <button key={style.id} type="button" disabled={roomState !== 'idle'} onClick={() => setStyleId(style.id)} className={`rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-55 ${styleId === style.id ? style.accent : 'border-white/10 bg-white/5 text-white/75 hover:bg-white/10'}`}><span className="block text-sm font-semibold">{style.title}</span><span className="mt-0.5 block text-[11px] leading-snug opacity-75">{style.detail}</span><span className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.08em] opacity-65">{style.tempoGuide}</span></button>)}</div></div>
 
-        <div className="mt-4 grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/15 bg-white/10 p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Backing volume</span><span className="text-sm font-semibold text-sage-200">{backingVolume}%</span></div><input aria-label="Live Room backing volume" type="range" min="35" max="100" step="5" value={backingVolume} onChange={(event) => setBackingVolume(Number(event.target.value))} className="mt-4 w-full accent-sage-300" /><p className="mt-2 text-xs text-white/60">Raise this if you can only hear a click. Start around 85% with headphones.</p></div><div className="rounded-xl border border-white/15 bg-white/10 p-4"><p className="text-sm font-semibold">Change response</p><div className="mt-3 grid grid-cols-3 gap-1.5">{([{ id: 'responsive', label: 'Responsive' }, { id: 'balanced', label: 'Balanced' }, { id: 'calm', label: 'Calm' }] as const).map((option) => <button key={option.id} type="button" onClick={() => setResponseMode(option.id)} className={`rounded-lg px-2 py-2 text-xs font-semibold transition ${responseMode === option.id ? 'bg-sage-200 text-ink-900' : 'bg-white/10 text-white/70 hover:bg-white/15'}`}>{option.label}</button>)}</div><p className="mt-2 text-xs text-white/60">Start Responsive if your strums are not moving the band; choose Calm if room noise causes jumps.</p></div></div>
+        <div className="mt-4 grid sm:grid-cols-2 gap-3"><div className="rounded-xl border border-white/15 bg-white/10 p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Backing volume</span><span className="text-sm font-semibold text-sage-200">{backingVolume}%</span></div><input aria-label="Live Room backing volume" type="range" min="40" max="140" step="5" value={backingVolume} onChange={(event) => setBackingVolume(Number(event.target.value))} className="mt-4 w-full accent-sage-300" /><p className="mt-2 text-xs text-white/60">100% is the normal full-band mix. Go up to 140% on quieter device speakers; the local compressor protects against sharp peaks.</p></div><div className="rounded-xl border border-white/15 bg-white/10 p-4"><p className="text-sm font-semibold">Change response</p><div className="mt-3 grid grid-cols-3 gap-1.5">{([{ id: 'responsive', label: 'Responsive' }, { id: 'balanced', label: 'Balanced' }, { id: 'calm', label: 'Calm' }] as const).map((option) => <button key={option.id} type="button" onClick={() => setResponseMode(option.id)} className={`rounded-lg px-2 py-2 text-xs font-semibold transition ${responseMode === option.id ? 'bg-sage-200 text-ink-900' : 'bg-white/10 text-white/70 hover:bg-white/15'}`}>{option.label}</button>)}</div><p className="mt-2 text-xs text-white/60">Start Responsive if your strums are not moving the band; choose Calm if room noise causes jumps.</p></div></div>
 
         <div className="mt-4 rounded-xl border border-white/15 bg-white/10 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.14em] text-white/55 font-semibold">The live route</p><p className="mt-1 text-sm text-white/75">The band knows this route, but it waits for your next clear guitar change.</p></div><span className="rounded-full bg-sage-200/15 px-3 py-1 text-xs font-semibold text-sage-100">{tempo} bpm pace</span></div><div className="mt-4 flex flex-wrap gap-1.5">{chords.map((chord, index) => <span key={`${chord}-${index}`} className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition ${index === activeChordIndex && roomState === 'playing' ? 'border-sage-200 bg-sage-200 text-ink-900' : 'border-white/15 bg-white/5 text-white/70'}`}>{index + 1}. {chord}</span>)}</div></div>
 
@@ -340,9 +371,10 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
         {lastMove && <div className="mt-4 rounded-xl border border-sage-200/25 bg-sage-200/10 px-4 py-3 text-sm text-sage-100 flex items-start gap-2"><Sparkles className="w-4 h-4 mt-0.5 shrink-0" /><span>{lastMove}</span></div>}
         {error && <div className="mt-4 rounded-xl border border-rose-300/30 bg-rose-300/10 px-4 py-3 text-sm text-rose-100 flex items-start gap-2"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}
 
-        <div className="mt-5 grid sm:grid-cols-2 gap-3"><button type="button" onClick={isRunning ? stopLiveRoom : startLiveRoom} className="rounded-xl bg-sage-200 text-ink-900 px-4 py-3 font-semibold flex items-center justify-center gap-2 hover:bg-sage-100 transition" disabled={starting}>{starting ? <><Loader2 className="w-5 h-5 animate-spin" /> Starting private mic…</> : isRunning ? <><Pause className="w-5 h-5" /> Stop Live Room</> : <><Play className="w-5 h-5" /> Start with a 4-beat count-in</>}</button><button type="button" onClick={() => moveBand('manual')} disabled={roomState !== 'playing'} className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 font-semibold flex items-center justify-center gap-2 hover:bg-white/15 transition disabled:cursor-not-allowed disabled:opacity-40"><SkipForward className="w-5 h-5" /> Need a nudge? Move on</button></div>
+        <div className="mt-5 grid sm:grid-cols-2 gap-3"><button type="button" onClick={isRunning ? stopLiveRoom : startLiveRoom} className="rounded-xl bg-sage-200 text-ink-900 px-4 py-3 font-semibold flex items-center justify-center gap-2 hover:bg-sage-100 transition" disabled={starting}>{starting ? <><Loader2 className="w-5 h-5 animate-spin" /> {loadingSamples ? 'Loading piano and bass…' : 'Starting private mic…'}</> : isRunning ? <><Pause className="w-5 h-5" /> Stop Live Room</> : <><Play className="w-5 h-5" /> Start with a 4-beat count-in</>}</button><button type="button" onClick={() => moveBand('manual')} disabled={roomState !== 'playing'} className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 font-semibold flex items-center justify-center gap-2 hover:bg-white/15 transition disabled:cursor-not-allowed disabled:opacity-40"><SkipForward className="w-5 h-5" /> Need a nudge? Move on</button></div>
 
         <div className="mt-4 rounded-xl border border-sky-200/15 bg-sky-200/10 px-4 py-3 text-xs leading-relaxed text-sky-100 flex items-start gap-2"><Headphones className="w-4 h-4 mt-0.5 shrink-0" /><span><strong>For the cleanest response, use headphones or keep the device volume low.</strong> The microphone processes live sound only in this browser to notice a new change signal; it never creates a recording.</span></div>
+        <p className="mt-3 text-center text-[10px] text-white/40">Piano and electric-bass samples: <a className="underline hover:text-white/70" href="https://github.com/nbrosowsky/tonejs-instruments" target="_blank" rel="noreferrer">tonejs-instruments</a>, CC BY 3.0.</p>
       </div>
     </section>
   );
