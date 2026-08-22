@@ -6,6 +6,17 @@ const ROOT_FREQUENCIES: Record<string, number> = {
 };
 
 type RoomState = 'idle' | 'count-in' | 'playing';
+type StyleId = 'campfire' | 'indie' | 'pop' | 'blues' | 'soul' | 'rock';
+type LiveStyle = { id: StyleId; title: string; detail: string; tempoGuide: string; accent: string };
+
+const LIVE_STYLES: LiveStyle[] = [
+  { id: 'campfire', title: 'Campfire', detail: 'Warm acoustic pulse', tempoGuide: '60–95 bpm', accent: 'border-amber-200 bg-amber-50 text-amber-950' },
+  { id: 'indie', title: 'Indie', detail: 'Soft kick, snare, and bass', tempoGuide: '75–120 bpm', accent: 'border-violet-200 bg-violet-50 text-violet-950' },
+  { id: 'pop', title: 'Pop', detail: 'Bright, steady four-on-the-floor', tempoGuide: '90–135 bpm', accent: 'border-sky-200 bg-sky-50 text-sky-950' },
+  { id: 'blues', title: 'Blues Club', detail: 'Root-and-fifth shuffle feel', tempoGuide: '65–115 bpm', accent: 'border-rose-200 bg-rose-50 text-rose-950' },
+  { id: 'soul', title: 'Soul', detail: 'Rounded bass and pocket drums', tempoGuide: '65–105 bpm', accent: 'border-sage-200 bg-sage-50 text-sage-950' },
+  { id: 'rock', title: 'Rock Stage', detail: 'Big kick, snare, and driving bass', tempoGuide: '95–150 bpm', accent: 'border-orange-200 bg-orange-50 text-orange-950' },
+];
 
 function chordRoot(chord: string) {
   return chord.charAt(0).toUpperCase();
@@ -28,14 +39,81 @@ function playCountClick(context: AudioContext, accented: boolean) {
   playTone(context, accented ? 1046.5 : 783.99, accented ? 0.18 : 0.11, 0.08);
 }
 
-function playBandBeat(context: AudioContext, chord: string, accented: boolean) {
+function playNoise(context: AudioContext, volume: number, duration: number, highPass: number) {
+  const buffer = context.createBuffer(1, Math.max(1, Math.floor(context.sampleRate * duration)), context.sampleRate);
+  const values = buffer.getChannelData(0);
+  for (let index = 0; index < values.length; index += 1) values[index] = Math.random() * 2 - 1;
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const gain = context.createGain();
+  filter.type = 'highpass';
+  filter.frequency.value = highPass;
+  gain.gain.setValueAtTime(volume, context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + duration);
+  source.buffer = buffer;
+  source.connect(filter).connect(gain).connect(context.destination);
+  source.start();
+}
+
+function playKick(context: AudioContext, volume = 0.09) {
+  playTone(context, 76, volume, 0.1, 'sine');
+}
+
+function playSnare(context: AudioContext, volume = 0.05) {
+  playNoise(context, volume, 0.09, 1300);
+}
+
+function playHat(context: AudioContext, volume = 0.018) {
+  playNoise(context, volume, 0.035, 5200);
+}
+
+function playBandBeat(context: AudioContext, chord: string, beat: number, style: LiveStyle, accented = false) {
   const root = ROOT_FREQUENCIES[chordRoot(chord)] || 98;
-  playTone(context, root, accented ? 0.14 : 0.075, accented ? 0.28 : 0.17, 'triangle');
-  playTone(context, accented ? 92 : 520, accented ? 0.07 : 0.025, accented ? 0.1 : 0.035, accented ? 'sine' : 'square');
+  const onBackbeat = beat === 1 || beat === 3;
+  const bass = (frequency: number, volume: number, duration: number, wave: OscillatorType = 'triangle') => playTone(context, frequency, volume, duration, wave);
+
+  if (style.id === 'campfire') {
+    if (beat === 0 || beat === 2 || accented) bass(root, 0.11, 0.24, 'triangle');
+    if (beat === 0) playKick(context, 0.045);
+    if (onBackbeat) playHat(context, 0.009);
+    return;
+  }
+  if (style.id === 'indie') {
+    bass(root, beat === 0 || accented ? 0.12 : 0.07, 0.18, 'triangle');
+    if (beat === 0 || beat === 2) playKick(context, 0.075);
+    if (onBackbeat) playSnare(context, 0.04);
+    playHat(context, 0.016);
+    return;
+  }
+  if (style.id === 'pop') {
+    bass(root, 0.09, 0.16, 'sine');
+    playKick(context, 0.09);
+    if (onBackbeat) playSnare(context, 0.055);
+    playHat(context, 0.024);
+    return;
+  }
+  if (style.id === 'blues') {
+    bass(beat === 1 || beat === 3 ? root * 1.5 : root, beat === 0 || accented ? 0.13 : 0.085, 0.22, 'triangle');
+    if (beat === 0 || beat === 2) playKick(context, 0.06);
+    if (onBackbeat) playSnare(context, 0.032);
+    return;
+  }
+  if (style.id === 'soul') {
+    bass(beat === 2 ? root * 2 : root, beat === 0 || accented ? 0.11 : 0.065, 0.2, 'sine');
+    if (beat === 0) playKick(context, 0.06);
+    if (onBackbeat) playSnare(context, 0.026);
+    playHat(context, 0.012);
+    return;
+  }
+  bass(root, beat === 0 || accented ? 0.15 : 0.1, 0.2, 'sawtooth');
+  if (beat === 0 || beat === 2) playKick(context, 0.1);
+  if (onBackbeat) playSnare(context, 0.065);
+  playHat(context, 0.024);
 }
 
 export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; tempo: number }) {
   const [roomState, setRoomState] = useState<RoomState>('idle');
+  const [styleId, setStyleId] = useState<StyleId>('indie');
   const [starting, setStarting] = useState(false);
   const [activeChordIndex, setActiveChordIndex] = useState(0);
   const [signalLevel, setSignalLevel] = useState(0);
@@ -60,6 +138,7 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
   const chordsRef = useRef(chords);
 
   const progressionKey = chords.join('|');
+  const selectedStyle = LIVE_STYLES.find((style) => style.id === styleId) || LIVE_STYLES[0];
   const currentChord = chords[activeChordIndex];
   const nextChord = chords[(activeChordIndex + 1) % chords.length];
 
@@ -94,7 +173,7 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
     activeChordRef.current = nextIndex;
     setActiveChordIndex(nextIndex);
     const next = route[nextIndex];
-    if (contextRef.current) playBandBeat(contextRef.current, next, true);
+    if (contextRef.current) playBandBeat(contextRef.current, next, 0, selectedStyle, true);
     setLastMove(source === 'signal' ? `Your change was heard — the band moved to ${next}.` : `The band has moved to ${next}.`);
   };
 
@@ -136,7 +215,7 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
     setLastMove(`The band is on ${chordsRef.current[0]}. Play a clear change when you are ready to move on.`);
     const bandTick = () => {
       const currentBeat = bandBeatRef.current;
-      playBandBeat(context, chordsRef.current[activeChordRef.current], currentBeat === 0);
+      playBandBeat(context, chordsRef.current[activeChordRef.current], currentBeat, selectedStyle);
       setBandBeat(currentBeat);
       bandBeatRef.current = (currentBeat + 1) % 4;
     };
@@ -219,9 +298,11 @@ export default function FollowMeLiveRoom({ chords, tempo }: { chords: string[]; 
   return (
     <section className="mt-6 rounded-2xl overflow-hidden border border-violet-200 bg-gradient-to-br from-ink-900 via-violet-950 to-sage-950 text-white shadow-soft">
       <div className="p-5 sm:p-7">
-        <div className="flex items-start justify-between gap-4"><div><p className="text-xs uppercase tracking-[0.16em] font-semibold text-sage-200">Private responsive practice</p><h2 className="mt-1 font-display text-2xl sm:text-3xl font-semibold">Follow Me Live Room</h2><p className="mt-2 max-w-xl text-sm text-white/70">Take a four-beat count-in, then keep the band with you. Play a fresh change and the bass moves to the next chord in your route.</p></div><div className="w-11 h-11 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0"><Music2 className="w-6 h-6 text-sage-200" /></div></div>
+        <div className="flex items-start justify-between gap-4"><div><p className="text-xs uppercase tracking-[0.16em] font-semibold text-sage-200">Private responsive practice</p><h2 className="mt-1 font-display text-2xl sm:text-3xl font-semibold">Follow Me Live Room</h2><p className="mt-2 max-w-xl text-sm text-white/70">Take a four-beat count-in, then play with a local {selectedStyle.title.toLowerCase()} backing. Make a fresh change and the bass moves to the next chord in your route.</p></div><div className="w-11 h-11 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0"><Music2 className="w-6 h-6 text-sage-200" /></div></div>
 
-        <div className="mt-5 rounded-xl border border-white/15 bg-white/10 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.14em] text-white/55 font-semibold">The live route</p><p className="mt-1 text-sm text-white/75">The band knows this route, but it waits for your next clear guitar change.</p></div><span className="rounded-full bg-sage-200/15 px-3 py-1 text-xs font-semibold text-sage-100">{tempo} bpm pace</span></div><div className="mt-4 flex flex-wrap gap-1.5">{chords.map((chord, index) => <span key={`${chord}-${index}`} className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition ${index === activeChordIndex && roomState === 'playing' ? 'border-sage-200 bg-sage-200 text-ink-900' : 'border-white/15 bg-white/5 text-white/70'}`}>{index + 1}. {chord}</span>)}</div></div>
+        <div className="mt-5 rounded-xl border border-white/15 bg-white/10 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.14em] text-white/55 font-semibold">Choose your play-along style</p><p className="mt-1 text-sm text-white/75">Every style follows your chord route; choose the one that makes you want to keep playing.</p></div><span className="text-xs text-white/55">Stop the room to switch styles</span></div><div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">{LIVE_STYLES.map((style) => <button key={style.id} type="button" disabled={roomState !== 'idle'} onClick={() => setStyleId(style.id)} className={`rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-55 ${styleId === style.id ? style.accent : 'border-white/10 bg-white/5 text-white/75 hover:bg-white/10'}`}><span className="block text-sm font-semibold">{style.title}</span><span className="mt-0.5 block text-[11px] leading-snug opacity-75">{style.detail}</span><span className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.08em] opacity-65">{style.tempoGuide}</span></button>)}</div></div>
+
+        <div className="mt-4 rounded-xl border border-white/15 bg-white/10 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.14em] text-white/55 font-semibold">The live route</p><p className="mt-1 text-sm text-white/75">The band knows this route, but it waits for your next clear guitar change.</p></div><span className="rounded-full bg-sage-200/15 px-3 py-1 text-xs font-semibold text-sage-100">{tempo} bpm pace</span></div><div className="mt-4 flex flex-wrap gap-1.5">{chords.map((chord, index) => <span key={`${chord}-${index}`} className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition ${index === activeChordIndex && roomState === 'playing' ? 'border-sage-200 bg-sage-200 text-ink-900' : 'border-white/15 bg-white/5 text-white/70'}`}>{index + 1}. {chord}</span>)}</div></div>
 
         {roomState === 'count-in' ? <div className="mt-5 rounded-xl border border-amber-200/35 bg-amber-200/10 p-5 text-center"><p className="text-xs uppercase tracking-[0.14em] font-semibold text-amber-100">Count in</p><div className="mt-3 flex justify-center gap-2">{[1, 2, 3, 4].map((beat) => <span key={beat} className={`w-12 h-12 rounded-xl flex items-center justify-center font-display text-2xl font-semibold transition ${beat === countInBeat ? 'bg-amber-200 text-ink-900 scale-110' : beat < countInBeat ? 'bg-amber-100/25 text-amber-100' : 'bg-white/5 text-white/40'}`}>{beat}</span>)}</div><p className="mt-4 text-sm text-amber-50/90">Get your first chord ready. The band begins on <strong>{chords[0]}</strong> after beat four.</p></div> : <><div className="mt-5 grid sm:grid-cols-[1fr,auto,1fr] items-center gap-4"><div className="rounded-xl border border-white/15 bg-white/5 p-4 text-center"><p className="text-[11px] uppercase tracking-[0.13em] text-white/50">The band is on</p><p className="mt-1 font-display text-5xl font-semibold">{currentChord}</p><div className="mt-3 flex justify-center gap-1.5" aria-label={`Band beat ${bandBeat + 1} of 4`}>{[0, 1, 2, 3].map((beat) => <span key={beat} className={`h-2.5 w-2.5 rounded-full ${roomState === 'playing' && beat === bandBeat ? 'bg-sage-200 scale-125' : 'bg-white/20'}`} />)}</div></div><div className="hidden sm:block text-2xl text-sage-200">→</div><div className="rounded-xl border border-white/10 bg-black/10 p-4 text-center"><p className="text-[11px] uppercase tracking-[0.13em] text-white/50">Show this next</p><p className="mt-1 font-display text-5xl font-semibold text-sage-200">{nextChord}</p><p className="mt-3 text-xs text-white/60">The screen and band update together when you move.</p></div></div>
 
