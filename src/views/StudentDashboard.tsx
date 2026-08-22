@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import { uploadPracticeRecording, resolveMediaUrl } from '../lib/storage';
 import { analyzeRecording, FeedbackResult } from '../lib/pitch';
 import GuitarTuner from '../components/GuitarTuner';
-import { Student, Task, Recording } from '../lib/types';
+import { GuitarMuscle, Student, Task, Recording } from '../lib/types';
+import { getMuscle } from '../lib/curriculum';
 import {
   Activity, AlertCircle, Calendar, Clock, Download, FileMusic, Loader2,
   Mic, Music4, Play, Sparkles, Square, TrendingUp, UserCircle, Video,
@@ -101,6 +102,7 @@ function TaskView({ onNavigate }: { onNavigate: (view: string) => void }) {
 
       <section>
         <div className="flex items-end justify-between gap-4 mb-3"><Header title={task.title} subtitle="One calm loop at a time." />{task.estimated_minutes && <span className="growth-focus-chip"><Clock className="w-3.5 h-3.5" /> {task.estimated_minutes} min</span>}</div>
+        <GuitarFocusCard tags={task.skill_tags || []} />
         <div className="growth-path">
           <div className="growth-step growth-step-active"><div className="growth-step-number">1</div><div><span className="growth-step-label">Focus</span><p>{task.mission || 'Listen for one small thing you want to improve.'}</p></div></div>
           <div className={`growth-step ${latestRecording ? 'growth-step-active' : ''}`}><div className="growth-step-number">2</div><div><span className="growth-step-label">Make a take</span><p>{latestRecording ? 'A take is saved in your private Passport.' : 'Record a short, honest snapshot.'}</p></div></div>
@@ -119,6 +121,38 @@ function TaskView({ onNavigate }: { onNavigate: (view: string) => void }) {
       <PracticeRecorder student={student} task={task} onSaved={() => setRefreshKey((value) => value + 1)} onGoLibrary={() => onNavigate('library')} />
       <SongPreparationCard student={student} />
     </div>
+  );
+}
+
+function GuitarFocusCard({ tags }: { tags: GuitarMuscle[] }) {
+  const muscles = tags.map(getMuscle).filter((muscle): muscle is NonNullable<typeof muscle> => Boolean(muscle));
+  if (muscles.length === 0) return null;
+  const focusNames = muscles.map((muscle) => muscle.label).join(' and ');
+  const practiceCue = muscles.some((muscle) => muscle.id === 'pulse') && muscles.some((muscle) => muscle.id === 'musicality')
+    ? 'Keep a steady thread through the whole song, then let the phrasing breathe naturally.'
+    : muscles.some((muscle) => muscle.id === 'chords') && muscles.some((muscle) => muscle.id === 'pulse')
+      ? 'Make each change feel unhurried and keep the pattern moving, even at a slower speed.'
+      : muscles.some((muscle) => muscle.id === 'chords') && muscles.some((muscle) => muscle.id === 'musicality')
+        ? 'Let the chord changes connect, then experiment with a softer and more expressive version.'
+        : muscles.some((muscle) => muscle.id === 'fretboard') && muscles.some((muscle) => muscle.id === 'chords')
+          ? 'Notice where each shape sits on the neck and move carefully into the next one.'
+          : `Choose one small detail in your ${focusNames.toLowerCase()} and give it calm, patient attention.`;
+
+  return (
+    <section className="mb-4 rounded-xl border border-sage-200 bg-sage-50/70 p-4 sm:p-5">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-white text-sage-700 shadow-soft flex items-center justify-center shrink-0"><Sparkles className="w-5 h-5" /></div>
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.14em] font-semibold text-sage-700">This week’s guitar focus</p>
+          <p className="mt-1 text-sm text-ink-600">This task is designed to help you build one or two skills at a time.</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {muscles.map((muscle) => <span key={muscle.id} className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${muscle.accent}`}>{muscle.label}<span className="ml-1.5 font-normal opacity-80">{muscle.description}</span></span>)}
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-ink-700"><span className="font-semibold text-sage-800">Try this:</span> {practiceCue}</p>
+      <p className="mt-2 text-[11px] text-ink-500">This is a guide to today’s task, not a score.</p>
+    </section>
   );
 }
 
