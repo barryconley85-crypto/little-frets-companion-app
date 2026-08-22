@@ -1,5 +1,5 @@
 import { useAuth } from '../context/AuthContext';
-import { LogOut } from 'lucide-react';
+import { LogOut, ShieldCheck } from 'lucide-react';
 
 interface ShellProps {
   active: string;
@@ -10,6 +10,7 @@ interface ShellProps {
 
 export default function AppShell({ active, onNavigate, nav, children }: ShellProps) {
   const { profile, signOut } = useAuth();
+  const isTeacher = profile?.role === 'teacher';
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-20 bg-sand-50/85 backdrop-blur border-b border-sand-100">
@@ -49,6 +50,15 @@ export default function AppShell({ active, onNavigate, nav, children }: ShellPro
       </header>
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 pb-28 lg:pb-10">
+        <section className="mb-5 rounded-xl border border-sage-200 bg-sage-50 px-4 py-3 text-sm text-sage-900" aria-label="Private practice boundary">
+          <div className="flex items-start gap-2.5">
+            <ShieldCheck className="w-5 h-5 mt-0.5 shrink-0 text-sage-700" aria-hidden="true" />
+            <div>
+              <p className="font-semibold">{isTeacher ? 'A safeguarded teaching space' : 'Your private practice space'}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-sage-800">{isTeacher ? 'You can set tasks and share lesson materials here. Learner recordings stay private to each learner and are not available for you to review.' : 'Your practice recordings are private to you. They are not sent to your teacher, and Little Frets does not include messages or requests to your teacher.'}</p>
+            </div>
+          </div>
+        </section>
         {children}
       </main>
 
