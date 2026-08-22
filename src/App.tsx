@@ -35,6 +35,7 @@ export default function App() {
 
   const nav = [
     { id: 'task', label: 'Next move', icon: <HomeIcon /> },
+    { id: 'songs', label: 'Songs', icon: <SongIcon /> },
     { id: 'tuner', label: 'Tuner', icon: <TunerIcon /> },
     { id: 'library', label: 'Passport', icon: <LibraryIcon /> },
   ];
@@ -50,3 +51,4 @@ const UsersIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="no
 const HomeIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
 const LibraryIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 6 4 18 2 14l2-2L16 6z" /><path d="m22 6-6 6" /><path d="m16 18 6-6-6-6" /></svg>;
 const TunerIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18" /><path d="M5 7h14" /><path d="M7 12h10" /><path d="M9 17h6" /></svg>;
+const SongIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>;

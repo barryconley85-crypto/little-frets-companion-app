@@ -10,12 +10,13 @@ import {
   Mic, Music4, Play, Sparkles, Square, TrendingUp, UserCircle, Video,
 } from 'lucide-react';
 
-type View = 'task' | 'library' | 'tuner';
+type View = 'task' | 'library' | 'tuner' | 'songs';
 
 export default function StudentDashboard({ view, onNavigate }: { view: string; onNavigate: (view: string) => void }) {
-  const active = (['task', 'library', 'tuner'].includes(view) ? view : 'task') as View;
+  const active = (['task', 'library', 'tuner', 'songs'].includes(view) ? view : 'task') as View;
   if (active === 'library') return <LibraryView />;
   if (active === 'tuner') return <GuitarTuner />;
+  if (active === 'songs') return <SongPreparationView />;
   return <TaskView onNavigate={onNavigate} />;
 }
 
@@ -119,6 +120,13 @@ function TaskView({ onNavigate }: { onNavigate: (view: string) => void }) {
       <SongPreparationCard student={student} />
     </div>
   );
+}
+
+function SongPreparationView() {
+  const { student, loading } = useStudent();
+  if (loading) return <Loading />;
+  if (!student) return <NotLinked />;
+  return <div className="space-y-6"><Header title="Songs for my next lesson" subtitle="Choose something you would love to learn so your teacher can prepare it." /><SongPreparationCard student={student} /></div>;
 }
 
 function SongPreparationCard({ student }: { student: Student }) {
