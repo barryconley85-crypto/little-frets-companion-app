@@ -402,6 +402,8 @@ function RequestsView() {
   const { profile } = useAuth();
   const [rows, setRows] = useState<Array<{ id: string; song_name: string; note: string | null; status: string; created_at: string; student_name: string }>>([]);
   const [loading, setLoading] = useState(true);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!profile) return;
@@ -430,8 +432,20 @@ function RequestsView() {
   useEffect(() => { load(); }, [load]);
 
   const markReviewed = async (id: string) => {
-    await supabase.from('requests').update({ status: 'reviewed' }).eq('id', id);
-    load();
+    setReviewingId(id);
+    setActionError(null);
+    const { data, error } = await supabase
+      .from('requests')
+      .update({ status: 'reviewed' })
+      .eq('id', id)
+      .select('id, status')
+      .maybeSingle();
+    setReviewingId(null);
+    if (error || !data) {
+      setActionError(error?.message || 'This request could not be marked reviewed. Please refresh and try again.');
+      return;
+    }
+    setRows((current) => current.map((request) => request.id === id ? { ...request, status: data.status } : request));
   };
 
   return (
@@ -440,6 +454,7 @@ function RequestsView() {
         <h1 className="font-display text-2xl font-semibold text-ink-800">Song requests</h1>
         <p className="text-ink-500 text-sm mt-0.5">Pieces your students would love to learn, newest first.</p>
       </div>
+      {actionError && <div className="rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-3">{actionError}</div>}
       {loading ? (
         <div className="card p-8 text-center text-ink-400 flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>
       ) : rows.length === 0 ? (
@@ -456,7 +471,7 @@ function RequestsView() {
                 <div className="text-xs text-ink-400 mt-1.5 flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(r.created_at).toLocaleDateString()}</div>
               </div>
               {r.status === 'pending' ? (
-                <button className="btn-secondary px-3 py-2 text-sm" onClick={() => markReviewed(r.id)}>Mark reviewed</button>
+                <button className="btn-secondary px-3 py-2 text-sm" onClick={() => markReviewed(r.id)} disabled={reviewingId === r.id}>{reviewingId === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {reviewingId === r.id ? 'Saving…' : 'Mark reviewed'}</button>
               ) : (
                 <span className="text-xs px-2.5 py-1 rounded-full bg-sage-100 text-sage-700 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Reviewed</span>
               )}
